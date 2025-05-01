@@ -131,6 +131,23 @@ def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+def calculate_income_expense(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[float, float]:
+    """
+    総収入と総支出を計算する
+
+    :param df: 前処理した家計簿データ
+    :type df: pd.DataFrame
+    :return: 総収入と総支出を含むタプル
+    :rtype: tuple
+    """
+    # 総収入の計算
+    total_income = preprocessed_kakeibo_df[preprocessed_kakeibo_df['is_salary'] | preprocessed_kakeibo_df['is_bonus']]['amount'].sum()
+
+    # 総支出の計算
+    total_expense = preprocessed_kakeibo_df[~(preprocessed_kakeibo_df['is_salary'] | preprocessed_kakeibo_df['is_bonus'])]['amount'].sum()
+
+    return total_income, total_expense
+
 def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bonus: bool = True):
     """月別収支のトレンドをプロットする"""
 
@@ -253,6 +270,11 @@ def main():
 
     # 家計簿データの前処理
     preprocessed_kakeibo_data = preprocess_data(kakeibo_data)
+
+    # 総収入と総支出を表示
+    total_income, total_expense = calculate_income_expense(preprocessed_kakeibo_data)
+    st.write(f"総収入: {total_income:,.0f} 円")
+    st.write(f"総支出: {total_expense:,.0f} 円")
 
     # 月別収支推移のグラフを表示（賞与込み）
     plot_monthly_balance_trend(preprocessed_kakeibo_data)
