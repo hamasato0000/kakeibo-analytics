@@ -13,7 +13,8 @@ load_dotenv()
 S3_BUCKET_NAME = os.environ["S3_BUCKET_NAME"]
 S3_PREFIX = os.environ["S3_PREFIX"]
 
-st.title("収支トレンド")
+st.title("収支分析")
+st.header("月別収支推移/収支バランス")
 
 # S3接続設定
 @st.cache_resource
@@ -211,5 +212,7 @@ def main():
     preprocessed_kakeibo_data = preprocess_data(kakeibo_data)
 
     plot_monthly_balance_trend(preprocessed_kakeibo_data)
+
+    st.dataframe(preprocessed_kakeibo_data)
 
 main()
