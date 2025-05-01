@@ -14,7 +14,7 @@ S3_BUCKET_NAME = os.environ["S3_BUCKET_NAME"]
 S3_PREFIX = os.environ["S3_PREFIX"]
 
 st.title("収支分析")
-st.header("月別収支推移/収支バランス")
+st.header("月別収支推移・収支バランス")
 
 # S3接続設定
 @st.cache_resource
@@ -132,7 +132,7 @@ def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame):
+def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bonus: bool = True):
     """月別収支のトレンドをプロットする"""
 
     # 前処理済みのデータを使用
@@ -141,15 +141,29 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame):
     # 年月のカラムを追加
     df['year_month'] = df['date'].dt.to_period('M')
 
-    # 月ごとの収入と支出を集計
-    monthly_summary = df.groupby('year_month').agg(
-        total_income_with_bonus=('amount', lambda x: x[(df['is_salary'] | df['is_bonus'])].sum()),
-        # total_income_without_bonus=('amount', lambda x: x[df['is_salary'] & ~df['is_bonus']].sum()),
-        total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'])].sum())
-    ).reset_index()
+    if include_bonus:
+        # 月ごとの収入と支出を集計
+        monthly_summary = df.groupby('year_month').agg(
+            total_income=('amount', lambda x: x[(df['is_salary'] | df['is_bonus'])].sum()),
+            total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'])].sum())
+        ).reset_index()
 
-    # 収支バランスを計算（収入 - 支出）
-    monthly_summary['balance'] = monthly_summary['total_income_with_bonus'] + monthly_summary['total_expense']  # 支出は負の値なので加算
+        income_label = '収入（賞与込み）'
+
+        # 収支バランスを計算（収入 - 支出）
+        monthly_summary['balance'] = monthly_summary['total_income'] + monthly_summary['total_expense']  # 支出は負の値なので加算
+
+    else:
+        # 月ごとの収入と支出を集計
+        monthly_summary = df.groupby('year_month').agg(
+            total_income=('amount', lambda x: x[df['is_salary']].sum()),
+            total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'])].sum())
+        ).reset_index()
+
+        income_label = '収入（賞与なし）'
+
+        # 収支バランスを計算（収入 - 支出）
+        monthly_summary['balance'] = monthly_summary['total_income'] + monthly_summary['total_expense']  # 支出は負の値なので加算
 
     # 支出は正の値として表示するため、符号を反転（グラフ用）
     monthly_summary['total_expense_positive'] = -monthly_summary['total_expense']
@@ -159,25 +173,26 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame):
     monthly_summary['year_month_dt'] = monthly_summary['year_month'].dt.to_timestamp()
     monthly_summary = monthly_summary.sort_values('year_month_dt')
 
-    # データを長形式に変換（棒グラフ用）
     income_expense_data = pd.melt(
         monthly_summary,
         id_vars=['year_month_str', 'year_month_dt'],
-        value_vars=['total_income_with_bonus', 'total_expense_positive'],
+        value_vars=['total_income', 'total_expense_positive'],
         var_name='category',
         value_name='amount'
     )
 
     # カテゴリ名をわかりやすく変更
     category_mapping = {
-        'total_income_with_bonus': '収入（賞与込み）',
-        # 'total_income_without_bonus': '収入（賞与なし）',
+        'total_income': income_label,
         'total_expense_positive': '支出'
     }
+
     income_expense_data['category'] = income_expense_data['category'].map(category_mapping)
 
     # 収支バランス用のデータフレーム
     balance_data = monthly_summary[['year_month_str', 'year_month_dt', 'balance']]
+
+    bar_chart_title = f"月別収支推移： {income_label}と支出の比較"
 
     # 棒グラフ作成（グループ化された棒グラフ）
     bar_chart = alt.Chart(income_expense_data).mark_bar().encode(
@@ -187,7 +202,7 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame):
         color=alt.Color(
             'category:N',
             scale=alt.Scale(
-                domain=['収入（賞与込み）', '支出'],
+                domain=[income_label, '支出'],
                 range=['lightblue', 'salmon']
             ),
             legend=alt.Legend(title='区分')
@@ -199,7 +214,8 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame):
         ]
     ).properties(
         width=800,
-        height=400
+        height=400,
+        title=bar_chart_title
     )
 
     st.altair_chart(bar_chart, use_container_width=True)
@@ -209,10 +225,13 @@ def main():
     with st.spinner("S3からデータを取得中..."):
         kakeibo_data: pd.DataFrame = read_csv_files_from_s3(bucket_name=S3_BUCKET_NAME, prefix=S3_PREFIX)
 
+    # 家計簿データの前処理
     preprocessed_kakeibo_data = preprocess_data(kakeibo_data)
 
+    # 月別収支推移のグラフを表示（賞与込み）
     plot_monthly_balance_trend(preprocessed_kakeibo_data)
 
-    st.dataframe(preprocessed_kakeibo_data)
+    # 月別収支推移のグラフを表示（賞与なし）
+    plot_monthly_balance_trend(preprocessed_kakeibo_data, include_bonus=False)
 
 main()
