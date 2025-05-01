@@ -14,7 +14,6 @@ S3_BUCKET_NAME = os.environ["S3_BUCKET_NAME"]
 S3_PREFIX = os.environ["S3_PREFIX"]
 
 st.title("収支分析")
-st.header("月別収支推移・収支バランス")
 
 # S3接続設定
 @st.cache_resource
@@ -189,24 +188,21 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
 
     income_expense_data['category'] = income_expense_data['category'].map(category_mapping)
 
-    # 収支バランス用のデータフレーム
-    balance_data = monthly_summary[['year_month_str', 'year_month_dt', 'balance']]
-
-    bar_chart_title = f"月別収支推移： {income_label}と支出の比較"
-
     # 棒グラフ作成（グループ化された棒グラフ）
     bar_chart = alt.Chart(income_expense_data).mark_bar().encode(
-        x=alt.X('year_month_str:N', title='年月', sort=alt.EncodingSortField(field='year_month_dt')),
-        y=alt.Y('amount:Q', title='金額（円）'),
-        xOffset='category:N',  # カテゴリごとに横にずらす（グループ化）
+        x=alt.X('year_month_str:N', title='年月', sort=alt.EncodingSortField(field='year_month_dt')), # X軸に年月を設定、年月でソート
+        y=alt.Y('amount:Q', title='金額（円）'), # Y軸に金額を設定
+        xOffset='category:N', # カテゴリごとに棒を横にずらす（グループ化）
+        # カテゴリ毎に色分け
         color=alt.Color(
             'category:N',
             scale=alt.Scale(
                 domain=[income_label, '支出'],
                 range=['lightblue', 'salmon']
             ),
-            legend=alt.Legend(title='区分')
+            legend=alt.Legend(title='区分', orient="top")
         ),
+        # マウスホバー時に表示される情報（ツールチップ）。
         tooltip=[
             alt.Tooltip('year_month_str:N', title='年月'),
             alt.Tooltip('category:N', title='区分'),
@@ -215,10 +211,40 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
     ).properties(
         width=800,
         height=400,
-        title=bar_chart_title
     )
 
-    st.altair_chart(bar_chart, use_container_width=True)
+    # 収支バランス用のデータフレーム
+    balance_data = monthly_summary[['year_month_str', 'year_month_dt', 'balance']]
+
+    # 収支バランスの線グラフ作成
+    line_chart = alt.Chart(balance_data).mark_line(
+        point={
+            'filled': True,  # ポイントを塗りつぶし
+            'fill': 'yellow',  # ポイントの塗りつぶし色
+            'stroke': 'green',  # ポイントの枠線の色
+            'strokeWidth': 2,  # ポイントの枠線の太さ
+            'size': 80  # ポイントのサイズ
+        }, # データポイントを表示
+        color='green',
+        strokeWidth=2
+    ).encode(
+        x=alt.X('year_month_str:N', title='年月', sort=alt.EncodingSortField(field='year_month_dt')), # X軸に年月を設定、年月でソート
+        y=alt.Y('balance:Q', title='収支バランス（円）', scale=alt.Scale(zero=False)),
+        tooltip=[
+            alt.Tooltip('year_month_str:N', title='年月'),
+            alt.Tooltip('balance:Q', title='収支バランス（円）', format=',')
+        ]
+    )
+
+    # グラフの重ね合わせとスケール調整
+    chart = alt.layer(
+        bar_chart,
+        line_chart
+    ).properties(
+        title=f'月別の収入・支出および収支バランスの推移：{income_label}と支出の比較'
+    )
+
+    st.altair_chart(chart, use_container_width=True)
 
 def main():
 
