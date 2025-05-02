@@ -147,6 +147,18 @@ def get_date_range(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[datetime, dat
 
     return oldest_date, newest_date
 
+def display_date_range(preprocessed_kakeibo_df: pd.DataFrame):
+    """
+    家計簿データの期間を表示する
+
+    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
+    :type preprocessed_kakeibo_df: pd.DataFrame
+    """
+
+    # 家計簿データの期間を取得
+    start_date, end_date = get_date_range(preprocessed_kakeibo_df)
+    st.markdown(f":gray[家計簿データの期間：{start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')}]")
+
 def calculate_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[float, float]:
     """
     総収入と総支出を計算する
@@ -298,9 +310,8 @@ def main():
     # 家計簿データの前処理
     preprocessed_kakeibo_data = preprocess_data(kakeibo_data)
 
-    # 家計簿データの期間を取得
-    start_date, end_date = get_date_range(preprocessed_kakeibo_data)
-    st.markdown(f":gray[家計簿データの期間：{start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')}]")
+    # 家計簿データの期間を表示
+    display_date_range(preprocessed_kakeibo_data)
 
     # 総収入と総支出を表示
     display_total_income_expense(preprocessed_kakeibo_data)
