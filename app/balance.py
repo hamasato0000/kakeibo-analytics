@@ -131,6 +131,22 @@ def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+def get_date_range(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[datetime, datetime]:
+    """
+    家計簿データの日付範囲を取得する
+
+    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
+    :type preprocessed_kakeibo_df: pd.DataFrame
+    :return: 最古の日付, 最新の日付のタプル
+    :rtype: tuple[datetime, datetime]
+    """
+
+    # date列の最小値と最大値を取得
+    oldest_date = preprocessed_kakeibo_df['date'].min()
+    newest_date = preprocessed_kakeibo_df['date'].max()
+
+    return oldest_date, newest_date
+
 def calculate_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[float, float]:
     """
     総収入と総支出を計算する
@@ -158,7 +174,6 @@ def display_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame):
         tile = col.container(border=True)
         tile.subheader("総収入" if col == row[0] else "総支出")
         tile.markdown(f"### :blue[¥ {total_income:,.0f}]" if col == row[0] else f"### :red[¥ {total_expense:,.0f}]")
-
 
 def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bonus: bool = True):
     """月別収支のトレンドをプロットする"""
@@ -282,6 +297,10 @@ def main():
 
     # 家計簿データの前処理
     preprocessed_kakeibo_data = preprocess_data(kakeibo_data)
+
+    # 家計簿データの期間を取得
+    start_date, end_date = get_date_range(preprocessed_kakeibo_data)
+    st.markdown(f":gray[家計簿データの期間：{start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')}]")
 
     # 総収入と総支出を表示
     display_total_income_expense(preprocessed_kakeibo_data)
