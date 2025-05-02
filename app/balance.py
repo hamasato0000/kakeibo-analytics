@@ -131,6 +131,114 @@ def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+def get_date_range(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[datetime, datetime]:
+    """
+    家計簿データの日付範囲を取得する
+
+    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
+    :type preprocessed_kakeibo_df: pd.DataFrame
+    :return: 最古の日付, 最新の日付のタプル
+    :rtype: tuple[datetime, datetime]
+    """
+
+    # date列の最小値と最大値を取得
+    oldest_date = preprocessed_kakeibo_df['date'].min()
+    newest_date = preprocessed_kakeibo_df['date'].max()
+
+    return oldest_date, newest_date
+
+def display_date_range(preprocessed_kakeibo_df: pd.DataFrame):
+    """
+    家計簿データの期間を表示する
+
+    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
+    :type preprocessed_kakeibo_df: pd.DataFrame
+    """
+
+    # 家計簿データの期間を取得
+    start_date, end_date = get_date_range(preprocessed_kakeibo_df)
+    st.markdown(f":gray[家計簿データの期間：{start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')}]")
+
+def calculate_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[float, float, float]:
+    """
+    総収入と総支出を計算する
+
+    :param df: 前処理した家計簿データ
+    :type df: pd.DataFrame
+    :return: 総収入、総支出、総収支バランスを含むタプル
+    :rtype: tuple[float, float, float]
+    """
+    # 総収入の計算
+    total_income = preprocessed_kakeibo_df[preprocessed_kakeibo_df['is_salary'] | preprocessed_kakeibo_df['is_bonus']]['amount'].sum()
+
+    # 総支出の計算
+    total_expense = preprocessed_kakeibo_df[~(preprocessed_kakeibo_df['is_salary'] | preprocessed_kakeibo_df['is_bonus'])]['amount'].sum()
+
+    # 総収支バランスの計算
+    total_balance = total_income + total_expense  # 支出は負の値なので加算
+
+    return total_income, total_expense, total_balance
+
+def display_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame):
+
+    total_income, total_expense, total_balance = calculate_total_income_expense(preprocessed_kakeibo_df)
+
+    total_income_expense_row = st.columns(2)
+
+    for col in total_income_expense_row:
+        tile = col.container(border=True)
+        tile.subheader("総収入" if col == total_income_expense_row[0] else "総支出")
+        tile.markdown(f"### :blue[¥ {total_income:,.0f}]" if col == total_income_expense_row[0] else f"### :red[¥ {total_expense:,.0f}]")
+
+    total_balance_row = st.container(border=True)
+    total_balance_row.subheader("総収支バランス")
+    total_balance_row.markdown(f"### :green[¥ {total_balance:,.0f}]")
+
+def display_average_income_expense(preprocessed_kakeibo_df: pd.DataFrame):
+    """
+    家計簿データの平均収入と平均支出を表示する
+
+    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
+    :type preprocessed_kakeibo_df: pd.DataFrame
+    """
+
+    df = preprocessed_kakeibo_df.copy()
+
+    # 年月のカラムを追加
+    df['year_month'] = df['date'].dt.to_period('M')
+
+    income_with_bonus_df = df[df['is_salary'] | df['is_bonus']]
+    income_without_bonus_df = df[df['is_salary']]
+    expense_df = df[~(df['is_salary'] | df['is_bonus'])]
+
+    # 月ごとのデータ集計
+    monthly_summary = pd.DataFrame({
+        'income_with_bonus': income_with_bonus_df.groupby('year_month')['amount'].sum(),
+        'income_without_bonus': income_without_bonus_df.groupby('year_month')['amount'].sum(),
+        'expense': expense_df.groupby('year_month')['amount'].sum(),
+    }).reset_index()
+
+    monthly_summary['balance_with_bonus'] = monthly_summary['income_with_bonus'] + monthly_summary['expense']
+    monthly_summary['balance_without_bonus'] = monthly_summary['income_without_bonus'] + monthly_summary['expense']
+
+    # 月平均を算出
+    monthly_avg = monthly_summary[['income_with_bonus', 'income_without_bonus', 'expense', 'balance_with_bonus', 'balance_without_bonus']].mean()
+    monthly_avg = monthly_avg.round(0).astype(int)
+
+    category_labels = {
+        'income_with_bonus': '月平均収入（賞与込み）',
+        'income_without_bonus': '月平均収入（賞与なし）',
+        'expense': '月平均支出',
+        'balance_with_bonus': '月平均収支バランス（賞与込み）',
+        'balance_without_bonus': '月平均収支バランス（賞与なし）'
+    }
+
+    for category, amount in monthly_avg.items():
+        label = category_labels.get(category, category)  # マッピングがない場合は元の名前を使用
+        tile = st.container(border=True)
+        tile.subheader(label)
+        tile.markdown(f"### ¥ {amount:,.0f}")
+
 def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bonus: bool = True):
     """月別収支のトレンドをプロットする"""
 
@@ -253,6 +361,18 @@ def main():
 
     # 家計簿データの前処理
     preprocessed_kakeibo_data = preprocess_data(kakeibo_data)
+
+    # 家計簿データの期間を表示
+    display_date_range(preprocessed_kakeibo_data)
+
+    st.header("サマリー")
+
+    # 総収入と総支出を表示
+    display_total_income_expense(preprocessed_kakeibo_data)
+
+    display_average_income_expense(preprocessed_kakeibo_data)
+
+    st.header("グラフ")
 
     # 月別収支推移のグラフを表示（賞与込み）
     plot_monthly_balance_trend(preprocessed_kakeibo_data)
