@@ -13,27 +13,37 @@ load_dotenv()
 S3_BUCKET_NAME = os.environ["S3_BUCKET_NAME"]
 S3_PREFIX = os.environ["S3_PREFIX"]
 
-st.title("収支分析")
+st.title("📊 収支分析")
 
-# S3接続設定
 @st.cache_resource
-def get_s3fs():
-    """S3ファイルシステムのインスタンスを取得する"""
+def get_s3fs() -> s3fs.S3FileSystem:
+    """S3ファイルシステムのインスタンスを取得する
+
+    :return: S3FileSystemインスタンス
+    :rtype: s3fs.S3FileSystem
+    """
 
     # 環境変数から認証情報を取得する場合
     return s3fs.S3FileSystem(anon=False)
 
-# S3からCSVファイルのリストを取得
 @st.cache_data(ttl="1h")
-def read_csv_files_from_s3(bucket_name, prefix):
-    """S3バケットから家計簿CSVファイルの一覧を取得する"""
+def read_csv_files_from_s3(bucket_name: str, prefix: str) -> pd.DataFrame | None:
+    """S3バケットから家計簿CSVファイルの一覧を取得する
+
+    :param bucket_name: S3バケット名
+    :type bucket_name: str
+    :param prefix: S3バケット内のプレフィックス
+    :type prefix: str
+    :return: 家計簿データのDataFrame
+    :rtype: pd.DataFrame | None
+    """
 
     s3 = get_s3fs()
     csv_path = f"{bucket_name}/{prefix}**/*.csv"
     csv_files = s3.glob(csv_path)
 
     # 各CSVファイルを読み込みDataFrameのリストに格納
-    kakeibo_lists = []
+    kakeibo_lists: list[pd.DataFrame] = []
     for csv_file in csv_files:
         try:
             # ファイル名を表示
@@ -61,28 +71,6 @@ def read_csv_files_from_s3(bucket_name, prefix):
         print("No CSV files were read successfully.")
         return None
 
-# 家計簿データのCSVファイルを解析して期間情報を取得
-def parse_csv_filename(filename):
-    """CSVファイル名から期間情報を抽出する"""
-
-    pattern = r'収入・支出詳細_(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})\.csv'
-    match = re.search(pattern, os.path.basename(filename))
-    if match:
-        start_date = match.group(1)
-        end_date = match.group(2)
-
-        # yyyy-mm-dd形式をdatetime型に変換
-        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-
-        # 年月の情報を取得
-        year = end_dt.year
-        month = end_dt.month
-
-        return start_dt, end_dt, year, month
-
-    return None, None, None, None
-
 # S3からCSVファイルを読み込む
 @st.cache_data(ttl="1h")
 def read_csv_from_s3(file_path):
@@ -94,8 +82,15 @@ def read_csv_from_s3(file_path):
         df = pd.read_csv(f, encoding='Shift-JIS')
     return df
 
-def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
-    """家計簿データを前処理する"""
+def preprocess_data(kakeibo_df: pd.DataFrame) -> pd.DataFrame:
+    """家計簿データを前処理する
+    :param kakeibo_df: 家計簿データ
+    :type kakeibo_df: pd.DataFrame
+    :return: 前処理済みの家計簿データ
+    :rtype: pd.DataFrame
+    """
+
+    df = kakeibo_df.copy()
 
     # カラム名を英語に変換して扱いやすくする
     columns_mapping = {
@@ -112,16 +107,17 @@ def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
     }
     df = df.rename(columns=columns_mapping)
 
-    # 日付をdatetime型に変換
+    # データ操作や集計をしやすくするために日付をdatetime型に変換
     df['date'] = pd.to_datetime(df['date'])
 
     # 計算対象と振替のフラグを数値型に変換
     df['is_target'] = df['is_target'].astype(int)
     df['is_transfer'] = df['is_transfer'].astype(int)
 
-    # 「給与」カテゴリの判定
+    # 「収入」カテゴリの分類
     df['is_salary'] = df['major_category'].str.contains('収入') & df['minor_category'].str.contains('給与')
     df['is_bonus'] = df['major_category'].str.contains('収入') & df['minor_category'].str.contains('一時所得')
+    df['is_other_income'] = df['major_category'].str.contains('収入') & ~(df['minor_category'].str.contains('給与') | df['minor_category'].str.contains('一時所得'))
 
     # 計算対象外のものは削除
     df = df[df['is_target'] == 1]
@@ -131,7 +127,7 @@ def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def get_date_range(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[datetime, datetime]:
+def get_kakeibo_data_range(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[datetime, datetime]:
     """
     家計簿データの日付範囲を取得する
 
@@ -142,12 +138,12 @@ def get_date_range(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[datetime, dat
     """
 
     # date列の最小値と最大値を取得
-    oldest_date = preprocessed_kakeibo_df['date'].min()
-    newest_date = preprocessed_kakeibo_df['date'].max()
+    oldest_date: datetime = preprocessed_kakeibo_df['date'].min()
+    newest_date: datetime = preprocessed_kakeibo_df['date'].max()
 
     return oldest_date, newest_date
 
-def display_date_range(preprocessed_kakeibo_df: pd.DataFrame):
+def display_kakeibo_data_range(preprocessed_kakeibo_df: pd.DataFrame):
     """
     家計簿データの期間を表示する
 
@@ -156,7 +152,7 @@ def display_date_range(preprocessed_kakeibo_df: pd.DataFrame):
     """
 
     # 家計簿データの期間を取得
-    start_date, end_date = get_date_range(preprocessed_kakeibo_df)
+    start_date, end_date = get_kakeibo_data_range(preprocessed_kakeibo_df)
     st.markdown(f":gray[家計簿データの期間：{start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')}]")
 
 def calculate_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[float, float, float]:
@@ -180,19 +176,25 @@ def calculate_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame) -> tup
     return total_income, total_expense, total_balance
 
 def display_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame):
+    """
+    家計簿データの総収入と総支出を表示する
+    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
+    :type preprocessed_kakeibo_df: pd.DataFrame
+    """
 
     total_income, total_expense, total_balance = calculate_total_income_expense(preprocessed_kakeibo_df)
 
-    total_income_expense_row = st.columns(2)
+    container = st.container(border=True)
+
+    total_income_expense_row = container.columns(2)
 
     for col in total_income_expense_row:
-        tile = col.container(border=True)
-        tile.subheader("総収入" if col == total_income_expense_row[0] else "総支出")
-        tile.markdown(f"### :blue[¥ {total_income:,.0f}]" if col == total_income_expense_row[0] else f"### :red[¥ {total_expense:,.0f}]")
+        col.markdown("#### 総収入" if col == total_income_expense_row[0] else "#### 総支出")
+        col.markdown(f"#### :blue[¥ {total_income:,.0f}]" if col == total_income_expense_row[0] else f"#### :red[¥ {total_expense:,.0f}]")
 
-    total_balance_row = st.container(border=True)
-    total_balance_row.subheader("総収支バランス")
-    total_balance_row.markdown(f"### :green[¥ {total_balance:,.0f}]")
+    total_balance_row = container.columns(2)
+    total_balance_row[0].markdown("#### 総収支バランス")
+    total_balance_row[0].markdown(f"#### :green[¥ {total_balance:,.0f}]")
 
 def display_average_income_expense(preprocessed_kakeibo_df: pd.DataFrame):
     """
@@ -356,14 +358,14 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
 
 def main():
 
-    with st.spinner("S3からデータを取得中..."):
+    with st.spinner("家計簿データを取得中..."):
         kakeibo_data: pd.DataFrame = read_csv_files_from_s3(bucket_name=S3_BUCKET_NAME, prefix=S3_PREFIX)
 
     # 家計簿データの前処理
-    preprocessed_kakeibo_data = preprocess_data(kakeibo_data)
+    preprocessed_kakeibo_data: pd.DataFrame = preprocess_data(kakeibo_data)
 
     # 家計簿データの期間を表示
-    display_date_range(preprocessed_kakeibo_data)
+    display_kakeibo_data_range(preprocessed_kakeibo_data)
 
     st.header("サマリー")
 
