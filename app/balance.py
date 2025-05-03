@@ -82,7 +82,7 @@ def read_csv_from_s3(file_path):
         df = pd.read_csv(f, encoding='Shift-JIS')
     return df
 
-def preprocess_data(kakeibo_df: pd.DataFrame) -> pd.DataFrame:
+def preprocess_kakeibo_data(kakeibo_df: pd.DataFrame) -> pd.DataFrame:
     """家計簿データを前処理する
     :param kakeibo_df: 家計簿データ
     :type kakeibo_df: pd.DataFrame
@@ -126,6 +126,37 @@ def preprocess_data(kakeibo_df: pd.DataFrame) -> pd.DataFrame:
     df = df[df['is_transfer'] == 0]
 
     return df
+
+def summarize_monthly_kakeibo_data(preprocessed_kakeibo_df: pd.DataFrame) -> pd.DataFrame:
+    """月単位の家計簿データを集計する
+
+    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
+    :type preprocessed_kakeibo_df: pd.DataFrame
+    :return: 月別集計した家計簿データ
+    :rtype: pd.DataFrame
+    """
+
+    df = preprocessed_kakeibo_df.copy()
+
+    # 月別で集計するため、年月のカラムを追加
+    df['year_month'] = df['date'].dt.to_period('M')
+
+    income_only_salary_df = df[df['is_salary']]
+    income_with_others_df = df[df['is_salary'] | df['is_bonus'] | df['is_other_income']]
+    expense_df = df[~(df['is_salary'] | df['is_bonus'] | df['is_other_income'])]
+
+    # 月別集計
+    monthly_summary = pd.DataFrame({
+        'income_only_salary': income_only_salary_df.groupby('year_month')['amount'].sum(),
+        'income_with_others': income_with_others_df.groupby('year_month')['amount'].sum(),
+        'expense': expense_df.groupby('year_month')['amount'].sum(),
+    }).reset_index()
+
+    monthly_summary['balance_only_salary'] = monthly_summary['income_only_salary'] + monthly_summary['expense']
+    monthly_summary['balance_with_others'] = monthly_summary['income_with_others'] + monthly_summary['expense']
+
+    return monthly_summary
+
 
 def get_kakeibo_data_range(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[datetime, datetime]:
     """
@@ -362,7 +393,10 @@ def main():
         kakeibo_data: pd.DataFrame = read_csv_files_from_s3(bucket_name=S3_BUCKET_NAME, prefix=S3_PREFIX)
 
     # 家計簿データの前処理
-    preprocessed_kakeibo_data: pd.DataFrame = preprocess_data(kakeibo_data)
+    preprocessed_kakeibo_data: pd.DataFrame = preprocess_kakeibo_data(kakeibo_data)
+
+    # 月単位のデータ集計
+    monthly_kakeibo_summary: pd.DataFrame = summarize_monthly_kakeibo_data(preprocessed_kakeibo_data)
 
     # 家計簿データの期間を表示
     display_kakeibo_data_range(preprocessed_kakeibo_data)
