@@ -13,8 +13,6 @@ load_dotenv()
 S3_BUCKET_NAME = os.environ["S3_BUCKET_NAME"]
 S3_PREFIX = os.environ["S3_PREFIX"]
 
-st.title("📊 収支分析")
-
 @st.cache_resource
 def get_s3fs() -> s3fs.S3FileSystem:
     """S3ファイルシステムのインスタンスを取得する
@@ -186,6 +184,62 @@ def display_kakeibo_data_range(preprocessed_kakeibo_df: pd.DataFrame):
     start_date, end_date = get_kakeibo_data_range(preprocessed_kakeibo_df)
     st.markdown(f":gray[家計簿データの期間：{start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')}]")
 
+def display_summaries(monthly_kakeibo_summary: pd.DataFrame):
+
+    # 総収入の計算
+    total_income_only_salary = monthly_kakeibo_summary['income_only_salary'].sum()
+    total_income_with_others = monthly_kakeibo_summary['income_with_others'].sum()
+
+    # 総支出の計算
+    total_expense = monthly_kakeibo_summary['expense'].sum()
+
+    # 総収支バランスの計算
+    total_balance_only_salary = total_income_only_salary + total_expense
+    total_balance_with_others = total_income_with_others + total_expense
+
+    # 月平均を算出
+    monthly_avg: pd.Series = monthly_kakeibo_summary[['income_only_salary', 'income_with_others', 'expense', 'balance_only_salary', 'balance_with_others']].mean()
+    monthly_avg = monthly_avg.round(0).astype(int)
+
+    # 表示する指標を辞書で定義（拡張しやすい）
+    metrics = [
+        {"title": "総収入", "value": total_income_with_others, "category": "income"},
+        {"title": "総支出", "value": total_expense, "category": "expense"},
+        {"title": "総収支バランス", "value": total_balance_with_others, "category": 'balance'},
+        {"title": "月平均収入", "value": monthly_avg['income_with_others'], "category": "income"},
+        {"title": "月平均収入（給与のみ）", "value": monthly_avg['income_only_salary'], "category": 'income'},
+        {"title": "月平均支出", "value": monthly_avg['expense'], "category": 'expense'},
+        {"title": "月平均収支バランス", "value": monthly_avg['balance_with_others'], "category": 'balance'},
+        {"title": "月平均収支バランス（給与のみ）", "value": monthly_avg['balance_only_salary'], "category": 'balance'},
+    ]
+
+    value_colers = {
+        "income": "blue",
+        "expense": "red",
+        "balance": "green"
+    }
+
+    # 必要な行数を計算（2列の場合）
+    # 要素が奇数個の場合に適切な行数を割り出すために、1を加算してから2で割る
+    # 例: 7個の要素がある場合、(7 + 1) // 2 = 4行
+    num_rows = (len(metrics) + 1) // 2
+
+    # 指標を動的に表示
+    for i in range(num_rows):
+        row = st.columns(2)
+        for j in range(2):
+            idx = i * 2 + j
+            if idx < len(metrics):
+                metric = metrics[idx]
+                with row[j]:
+                    con = st.container(border=True)
+                    con.markdown(f"##### {metric['title']}")
+
+                    if metric["value"] >= 0:
+                        con.markdown(f"#### :blue[¥ {metric['value']:,.0f}]")
+                    else:
+                        con.markdown(f"#### :red[¥ {metric['value']:,.0f}]")
+
 def calculate_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[float, float, float]:
     """
     総収入と総支出を計算する
@@ -205,72 +259,6 @@ def calculate_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame) -> tup
     total_balance = total_income + total_expense  # 支出は負の値なので加算
 
     return total_income, total_expense, total_balance
-
-def display_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame):
-    """
-    家計簿データの総収入と総支出を表示する
-    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
-    :type preprocessed_kakeibo_df: pd.DataFrame
-    """
-
-    total_income, total_expense, total_balance = calculate_total_income_expense(preprocessed_kakeibo_df)
-
-    container = st.container(border=True)
-
-    total_income_expense_row = container.columns(2)
-
-    for col in total_income_expense_row:
-        col.markdown("#### 総収入" if col == total_income_expense_row[0] else "#### 総支出")
-        col.markdown(f"#### :blue[¥ {total_income:,.0f}]" if col == total_income_expense_row[0] else f"#### :red[¥ {total_expense:,.0f}]")
-
-    total_balance_row = container.columns(2)
-    total_balance_row[0].markdown("#### 総収支バランス")
-    total_balance_row[0].markdown(f"#### :green[¥ {total_balance:,.0f}]")
-
-def display_average_income_expense(preprocessed_kakeibo_df: pd.DataFrame):
-    """
-    家計簿データの平均収入と平均支出を表示する
-
-    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
-    :type preprocessed_kakeibo_df: pd.DataFrame
-    """
-
-    df = preprocessed_kakeibo_df.copy()
-
-    # 年月のカラムを追加
-    df['year_month'] = df['date'].dt.to_period('M')
-
-    income_with_bonus_df = df[df['is_salary'] | df['is_bonus']]
-    income_without_bonus_df = df[df['is_salary']]
-    expense_df = df[~(df['is_salary'] | df['is_bonus'])]
-
-    # 月ごとのデータ集計
-    monthly_summary = pd.DataFrame({
-        'income_with_bonus': income_with_bonus_df.groupby('year_month')['amount'].sum(),
-        'income_without_bonus': income_without_bonus_df.groupby('year_month')['amount'].sum(),
-        'expense': expense_df.groupby('year_month')['amount'].sum(),
-    }).reset_index()
-
-    monthly_summary['balance_with_bonus'] = monthly_summary['income_with_bonus'] + monthly_summary['expense']
-    monthly_summary['balance_without_bonus'] = monthly_summary['income_without_bonus'] + monthly_summary['expense']
-
-    # 月平均を算出
-    monthly_avg = monthly_summary[['income_with_bonus', 'income_without_bonus', 'expense', 'balance_with_bonus', 'balance_without_bonus']].mean()
-    monthly_avg = monthly_avg.round(0).astype(int)
-
-    category_labels = {
-        'income_with_bonus': '月平均収入（賞与込み）',
-        'income_without_bonus': '月平均収入（賞与なし）',
-        'expense': '月平均支出',
-        'balance_with_bonus': '月平均収支バランス（賞与込み）',
-        'balance_without_bonus': '月平均収支バランス（賞与なし）'
-    }
-
-    for category, amount in monthly_avg.items():
-        label = category_labels.get(category, category)  # マッピングがない場合は元の名前を使用
-        tile = st.container(border=True)
-        tile.subheader(label)
-        tile.markdown(f"### ¥ {amount:,.0f}")
 
 def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bonus: bool = True):
     """月別収支のトレンドをプロットする"""
@@ -389,6 +377,8 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
 
 def main():
 
+    st.title("📊 収支分析")
+
     with st.spinner("家計簿データを取得中..."):
         kakeibo_data: pd.DataFrame = read_csv_files_from_s3(bucket_name=S3_BUCKET_NAME, prefix=S3_PREFIX)
 
@@ -403,10 +393,8 @@ def main():
 
     st.header("サマリー")
 
-    # 総収入と総支出を表示
-    display_total_income_expense(preprocessed_kakeibo_data)
-
-    display_average_income_expense(preprocessed_kakeibo_data)
+    # サマリーを表示
+    display_summaries(monthly_kakeibo_summary)
 
     st.header("グラフ")
 
