@@ -1,10 +1,11 @@
 import streamlit as st
 
-st.title("家計簿アプリ")
+st.title("💴 お金の管理を最適化しよう")
 
-if st.button("Log in"):
-    st.login("auth0")
-if st.user.is_logged_in:
-    if st.button("Log out"):
-        st.logout()
-st.write(f"Hello, {st.user.to_dict()}!")
+if not st.user.is_logged_in:
+    st.markdown("#### まずはログイン")
+    if st.button("ログイン", icon=":material/login:"):
+        st.login("auth0")
+else:
+    st.sidebar.write(f"ログイン中：{st.user.name}")
+    st.sidebar.button("ログアウト", on_click=st.logout, icon=":material/logout:")
