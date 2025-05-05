@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.title("家計簿アプリ")
+st.title("💴 お金の管理を最適化しよう")
 
 if st.button("Log in"):
     st.login("auth0")
