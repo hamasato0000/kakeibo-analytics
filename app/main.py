@@ -1,8 +1,11 @@
 import os
 import streamlit as st
 from dotenv import load_dotenv
+from util import create_secrets_toml
 
 load_dotenv()
+
+create_secrets_toml()
 
 APP_LOGO = os.environ["APP_LOGO"]
 st.logo(image=APP_LOGO, size="large")
