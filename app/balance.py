@@ -376,8 +376,13 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
     st.altair_chart(chart, use_container_width=True)
 
 def main():
+    st.set_page_config(
+        page_title="収支分析",
+        page_icon=":material/analytics:",
+        layout="wide",
+    )
 
-    st.title("📊 収支分析")
+    st.title(":material/analytics: 収支分析")
 
     with st.spinner("家計簿データを取得中..."):
         kakeibo_data: pd.DataFrame = read_csv_files_from_s3(bucket_name=S3_BUCKET_NAME, prefix=S3_PREFIX)
