@@ -3,12 +3,12 @@ import streamlit as st
 import pandas as pd
 import s3fs
 import re
-from io import StringIO, BytesIO
+from io import StringIO
 import datetime
 import os
 
-st.set_page_config(page_title="マネーフォワード CSV アップローダー", layout="wide")
-st.title("マネーフォワード CSV アップローダー")
+st.set_page_config(page_title="CSV アップローダー", page_icon=":material/cloud_upload:", layout="centered")
+st.title(":material/cloud_upload: CSV アップローダー")
 
 # .envファイルから環境変数を読み込む
 load_dotenv()

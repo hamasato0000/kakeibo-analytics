@@ -14,12 +14,12 @@ st.logo(image=APP_LOGO, size="large")
 
 pg = st.navigation(
     [
-        st.Page("home.py", title="ホーム", icon="🏠️"),
-        st.Page("balance.py", title="収支分析", icon="📊"),
-        st.Page("fixed_variable_cost.py", title="固定費・変動費分析", icon="💰"),
+        st.Page("home.py", title="ホーム", icon=":material/home:"),
+        st.Page("balance.py", title="収支分析", icon=":material/analytics:"),
+        st.Page("fixed_variable_cost.py", title="固定費・変動費分析", icon=":material/attach_money:"),
         st.Page("file_upload.py", title="ファイルアップロード", icon=":material/cloud_upload:"),
         st.Page("chat.py", title="チャット", icon=":material/chat:"),
-    ] if st.user.is_logged_in else [st.Page("home.py", title="ホーム", icon="🏠️")]
+    ] if st.user.is_logged_in else [st.Page("home.py", title="ホーム", icon=":material/home:")]
 )
 
 pg.run()
