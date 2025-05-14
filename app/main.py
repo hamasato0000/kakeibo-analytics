@@ -3,6 +3,8 @@ import streamlit as st
 from dotenv import load_dotenv
 from util import create_secrets_toml
 
+print("main.pyが読み込まれました")
+
 load_dotenv()
 
 create_secrets_toml()
@@ -16,6 +18,7 @@ pg = st.navigation(
         st.Page("balance.py", title="収支分析", icon="📊"),
         st.Page("fixed_variable_cost.py", title="固定費・変動費分析", icon="💰"),
         st.Page("file_upload.py", title="ファイルアップロード", icon=":material/cloud_upload:"),
+        st.Page("chat.py", title="チャット", icon=":material/chat:"),
     ] if st.user.is_logged_in else [st.Page("home.py", title="ホーム", icon="🏠️")]
 )
 

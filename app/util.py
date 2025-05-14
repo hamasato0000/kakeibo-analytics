@@ -2,6 +2,8 @@ import os
 import toml
 from pathlib import Path
 
+print("util.pyが読み込まれました")
+
 def create_secrets_toml():
     """環境変数からsecrets.tomlを生成"""
 
