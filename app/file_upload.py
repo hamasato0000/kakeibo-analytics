@@ -1,14 +1,11 @@
 from dotenv import load_dotenv
 import streamlit as st
 import pandas as pd
-import s3fs
 import re
 from io import StringIO
 import datetime
 import os
-
-st.set_page_config(page_title="CSV アップローダー", page_icon=":material/cloud_upload:", layout="centered")
-st.title(":material/cloud_upload: CSV アップローダー")
+import s3_utils
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
@@ -69,24 +66,10 @@ def determine_s3_key(start_date):
     s3_key = f"{S3_PREFIX}/year={year}/month={month}"
     return s3_key
 
-def upload_to_s3(file_content, file_name, s3_key):
-    """S3にファイルをアップロード (s3fs使用)"""
-    try:
-        # s3fsの初期化
-        fs = s3fs.S3FileSystem(anon=False)
-
-        # S3のパス
-        s3_path = f"{S3_BUCKET_NAME}/{s3_key}/{file_name}"
-
-        # ファイルをアップロード
-        with fs.open(s3_path, 'wb') as f:
-            f.write(file_content)
-
-        return True, f"s3://{s3_path}"
-    except Exception as e:
-        return False, str(e)
-
 def main():
+    st.set_page_config(page_title="CSV アップローダー", page_icon=":material/cloud_upload:", layout="centered")
+    st.title(":material/cloud_upload: CSV アップローダー")
+
     st.write("マネーフォワードからエクスポートしたCSVファイルをS3にアップロードします。")
     st.write("ファイル名は「収入・支出詳細_YYYY-MM-DD_YYYY-MM-DD.csv」形式である必要があります。")
 
@@ -140,7 +123,7 @@ def main():
 
                 with st.spinner("S3にアップロード中..."):
                     # S3にアップロード
-                    success, result = upload_to_s3(file_content, file_name, s3_key)
+                    success, result = s3_utils.upload_to_s3(S3_BUCKET_NAME, file_content, file_name, s3_key)
 
                     if success:
                         st.success(f"ファイルを S3 にアップロードしました: {result}")
@@ -150,5 +133,4 @@ def main():
         except Exception as e:
             st.error(f"ファイル処理中にエラーが発生しました: {str(e)}")
 
-if __name__ == "__main__":
-    main()
+main()

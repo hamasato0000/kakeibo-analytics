@@ -58,3 +58,20 @@ def read_csv_files_from_s3(bucket_name: str, prefix: str) -> pd.DataFrame | None
     else:
         print("No CSV files were read successfully.")
         return None
+
+def upload_to_s3(file_content, file_name, bucket_name: str, s3_key):
+    """S3にファイルをアップロード (s3fs使用)"""
+    try:
+        # s3fsの初期化
+        fs = s3fs.S3FileSystem(anon=False)
+
+        # S3のパス
+        s3_path = f"{bucket_name}/{s3_key}/{file_name}"
+
+        # ファイルをアップロード
+        with fs.open(s3_path, 'wb') as f:
+            f.write(file_content)
+
+        return True, f"s3://{s3_path}"
+    except Exception as e:
+        return False, str(e)
