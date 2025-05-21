@@ -177,3 +177,5 @@ pyrightconfig.json
 
 # Streamlit
 .streamlit/
+
+kakeibo_data/

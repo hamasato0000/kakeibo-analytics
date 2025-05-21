@@ -6,79 +6,13 @@ import os
 from datetime import datetime
 import altair as alt
 from dotenv import load_dotenv
+import s3_utils
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
 
 S3_BUCKET_NAME = os.environ["S3_BUCKET_NAME"]
 S3_PREFIX = os.environ["S3_PREFIX"]
-
-@st.cache_resource
-def get_s3fs() -> s3fs.S3FileSystem:
-    """S3ファイルシステムのインスタンスを取得する
-
-    :return: S3FileSystemインスタンス
-    :rtype: s3fs.S3FileSystem
-    """
-
-    # 環境変数から認証情報を取得する場合
-    return s3fs.S3FileSystem(anon=False)
-
-@st.cache_data(ttl="1h")
-def read_csv_files_from_s3(bucket_name: str, prefix: str) -> pd.DataFrame | None:
-    """S3バケットから家計簿CSVファイルの一覧を取得する
-
-    :param bucket_name: S3バケット名
-    :type bucket_name: str
-    :param prefix: S3バケット内のプレフィックス
-    :type prefix: str
-    :return: 家計簿データのDataFrame
-    :rtype: pd.DataFrame | None
-    """
-
-    s3 = get_s3fs()
-    csv_path = f"{bucket_name}/{prefix}**/*.csv"
-    csv_files = s3.glob(csv_path)
-
-    # 各CSVファイルを読み込みDataFrameのリストに格納
-    kakeibo_lists: list[pd.DataFrame] = []
-    for csv_file in csv_files:
-        try:
-            # ファイル名を表示
-            filename = csv_file.split('/')[-1]
-            print(f"Reading file: {filename}")
-
-            # S3からファイルを読み込む
-            with s3.open(csv_file, 'rb') as f:
-                # CSVファイルを読み込み
-                df = pd.read_csv(f, encoding='shift-jis')
-
-                # ファイル名をDataFrameに追加
-                df['source_file'] = filename
-
-                # リストに追加
-                kakeibo_lists.append(df)
-
-        except Exception as e:
-            print(f"Error reading {csv_file}: {e}")
-
-    # 全てのDataFrameを結合
-    if kakeibo_lists:
-        return pd.concat(kakeibo_lists, ignore_index=True)
-    else:
-        print("No CSV files were read successfully.")
-        return None
-
-# S3からCSVファイルを読み込む
-@st.cache_data(ttl="1h")
-def read_csv_from_s3(file_path):
-    """S3からCSVファイルを読み込む"""
-
-    s3 = get_s3fs()
-    with s3.open(file_path, 'rb') as f:
-        # 文字コードを自動判定して読み込む
-        df = pd.read_csv(f, encoding='Shift-JIS')
-    return df
 
 def preprocess_kakeibo_data(kakeibo_df: pd.DataFrame) -> pd.DataFrame:
     """家計簿データを前処理する
@@ -385,7 +319,7 @@ def main():
     st.title(":material/analytics: 収支分析")
 
     with st.spinner("家計簿データを取得中..."):
-        kakeibo_data: pd.DataFrame = read_csv_files_from_s3(bucket_name=S3_BUCKET_NAME, prefix=S3_PREFIX)
+        kakeibo_data: pd.DataFrame = s3_utils.read_csv_files_from_s3(bucket_name=S3_BUCKET_NAME, prefix=S3_PREFIX)
 
     # 家計簿データの前処理
     preprocessed_kakeibo_data: pd.DataFrame = preprocess_kakeibo_data(kakeibo_data)
