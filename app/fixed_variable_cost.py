@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 import altair as alt
 from dotenv import load_dotenv
+import config
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
@@ -45,20 +46,10 @@ def preprocess_kakeibo_data(kakeibo_df: pd.DataFrame) -> pd.DataFrame:
     df['is_transfer'] = df['is_transfer'].astype(int)
 
     # 「収入」カテゴリの分類
-    df['is_income'] = df['major_category'].str.contains('収入')
+    df['is_income'] = df['major_category'].str.contains('収入', na=False)
 
-    # 固定費と変動費の分類
-    # 固定費の例：家賃、サブスクリプション、保険料など
-    fixed_cost_keywords = ['家賃', '保険', '通信', '固定費', 'サブスク', '定期購入', '会費', '支払い']
-
-    # 固定費フラグの作成
-    df['is_fixed_cost'] = False
-
-    # キーワードマッチングで固定費を判定
-    for keyword in fixed_cost_keywords:
-        df['is_fixed_cost'] = df['is_fixed_cost'] | df['description'].str.contains(keyword, na=False) | \
-                              df['minor_category'].str.contains(keyword, na=False) | \
-                              df['major_category'].str.contains(keyword, na=False)
+    # 固定費と変動費の分類（設定ファイルに基づく）
+    df['is_fixed_cost'] = df['major_category'].isin(config.FIXED_COST_CATEGORIES)
 
     # 変動費フラグの作成（収入でなく、固定費でもないものを変動費と分類）
     df['is_variable_cost'] = ~df['is_income'] & ~df['is_fixed_cost']
@@ -152,39 +143,65 @@ def display_cost_summaries(monthly_cost_summary: pd.DataFrame):
     monthly_avg = monthly_avg.round(0).astype(int)
 
     # 全期間の固定費率と変動費率
-    fixed_cost_ratio = round(total_fixed_cost / total_cost * 100, 1)
-    variable_cost_ratio = round(total_variable_cost / total_cost * 100, 1)
+    fixed_cost_ratio = round(total_fixed_cost / total_cost * 100, 1) if total_cost > 0 else 0
+    variable_cost_ratio = round(total_variable_cost / total_cost * 100, 1) if total_cost > 0 else 0
 
-    # 表示する指標を辞書で定義
-    metrics = [
-        {"title": "総固定費", "value": total_fixed_cost, "category": "fixed"},
-        {"title": "総変動費", "value": total_variable_cost, "category": "variable"},
-        {"title": "総支出", "value": total_cost, "category": "total"},
-        {"title": "月平均固定費", "value": monthly_avg['fixed_cost'], "category": "fixed"},
-        {"title": "月平均変動費", "value": monthly_avg['variable_cost'], "category": "variable"},
-        {"title": "月平均支出", "value": monthly_avg['total_cost'], "category": "total"},
-        {"title": f"固定費率", "value": f"{fixed_cost_ratio}%", "category": "ratio"},
-        {"title": f"変動費率", "value": f"{variable_cost_ratio}%", "category": "ratio"},
-    ]
+    # 指標を3列で表示
+    col1, col2, col3 = st.columns(3)
 
-    # 必要な行数を計算（2列の場合）
-    num_rows = (len(metrics) + 1) // 2
+    with col1:
+        # 固定費関連の指標
+        st.markdown("### 💰 固定費")
 
-    # 指標を動的に表示
-    for i in range(num_rows):
-        row = st.columns(2)
-        for j in range(2):
-            idx = i * 2 + j
-            if idx < len(metrics):
-                metric = metrics[idx]
-                with row[j]:
-                    con = st.container(border=True)
-                    con.markdown(f"##### {metric['title']}")
+        fixed_metrics = [
+            {"title": "総固定費", "value": total_fixed_cost},
+            {"title": "月平均固定費", "value": monthly_avg['fixed_cost']},
+            {"title": "固定費率", "value": f"{fixed_cost_ratio}%", "is_ratio": True}
+        ]
 
-                    if metric['category'] == 'ratio':
-                        con.markdown(f"#### {metric['value']}")
-                    else:
-                        con.markdown(f"#### :blue[¥ {metric['value']:,.0f}]")
+        for metric in fixed_metrics:
+            con = st.container(border=True)
+            con.markdown(f"**{metric['title']}**")
+            if metric.get('is_ratio'):
+                con.markdown(f"### :blue[{metric['value']}]")
+            else:
+                con.markdown(f"### :blue[¥ {metric['value']:,.0f}]")
+
+    with col2:
+        # 変動費関連の指標
+        st.markdown("### 🛒 変動費")
+
+        variable_metrics = [
+            {"title": "総変動費", "value": total_variable_cost},
+            {"title": "月平均変動費", "value": monthly_avg['variable_cost']},
+            {"title": "変動費率", "value": f"{variable_cost_ratio}%", "is_ratio": True}
+        ]
+
+        for metric in variable_metrics:
+            con = st.container(border=True)
+            con.markdown(f"**{metric['title']}**")
+            if metric.get('is_ratio'):
+                con.markdown(f"### :green[{metric['value']}]")
+            else:
+                con.markdown(f"### :green[¥ {metric['value']:,.0f}]")
+
+    with col3:
+        # 合計関連の指標
+        st.markdown("### 📊 合計")
+
+        total_metrics = [
+            {"title": "総支出", "value": total_cost},
+            {"title": "月平均支出", "value": monthly_avg['total_cost']},
+            {"title": "データ期間", "value": f"{len(monthly_cost_summary)}ヶ月", "is_text": True}
+        ]
+
+        for metric in total_metrics:
+            con = st.container(border=True)
+            con.markdown(f"**{metric['title']}**")
+            if metric.get('is_text'):
+                con.markdown(f"### :orange[{metric['value']}]")
+            else:
+                con.markdown(f"### :orange[¥ {metric['value']:,.0f}]")
 
 def plot_monthly_fixed_variable_costs(monthly_cost_summary: pd.DataFrame):
     """月別の固定費と変動費の推移をグラフ表示する
@@ -223,7 +240,7 @@ def plot_monthly_fixed_variable_costs(monthly_cost_summary: pd.DataFrame):
             'cost_type:N',
             scale=alt.Scale(
                 domain=['固定費', '変動費'],
-                range=['#5470c6', '#91cc75']
+                range=[config.CHART_COLORS['fixed_cost'], config.CHART_COLORS['variable_cost']]
             ),
             legend=alt.Legend(title='費用タイプ', orient="top")
         ),
@@ -238,35 +255,7 @@ def plot_monthly_fixed_variable_costs(monthly_cost_summary: pd.DataFrame):
         title='月別の固定費と変動費の推移'
     )
 
-    # 総額の線グラフ
-    total_line = alt.Chart(df).mark_line(
-        point={
-            'filled': True,
-            'fill': 'yellow',
-            'stroke': 'darkred',
-            'strokeWidth': 2,
-            'size': 80
-        },
-        color='darkred',
-        strokeWidth=2
-    ).encode(
-        x=alt.X('year_month_str:N', sort=alt.EncodingSortField(field='year_month_dt')),
-        y=alt.Y('total_cost:Q', title='合計金額（円）'),
-        tooltip=[
-            alt.Tooltip('year_month_str:N', title='年月'),
-            alt.Tooltip('total_cost:Q', title='合計金額（円）', format=',')
-        ]
-    )
-
-    # グラフを重ね合わせて表示
-    chart = alt.layer(
-        bar_chart,
-        total_line
-    ).resolve_scale(
-        y='independent'  # 線グラフと棒グラフのスケールを独立させる
-    )
-
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(bar_chart, use_container_width=True)
 
 def plot_fixed_variable_cost_ratio(monthly_cost_summary: pd.DataFrame):
     """月別の固定費率と変動費率の推移をグラフ表示する
@@ -331,11 +320,11 @@ def plot_fixed_variable_cost_ratio(monthly_cost_summary: pd.DataFrame):
 def main():
     st.set_page_config(
         page_title="固定費・変動費分析",
-        page_icon=":material/attach_money:",
+        page_icon="💰",
         layout="wide"
     )
 
-    st.title(":material/attach_money: 固定費・変動費分析")
+    st.title("💰 固定費・変動費分析")
 
     with st.spinner("家計簿データを取得中..."):
         # S3からデータを取得
@@ -350,12 +339,15 @@ def main():
     # 家計簿データの期間を表示
     display_kakeibo_data_range(preprocessed_kakeibo_data)
 
-    st.header("固定費・変動費のサマリー")
+    # 設定ファイルから固定費カテゴリを表示
+    st.info(f"**固定費の分類基準:** {', '.join(config.FIXED_COST_CATEGORIES)}")
+
+    st.header("📈 サマリー")
 
     # サマリーを表示
     display_cost_summaries(monthly_cost_summary)
 
-    st.header("グラフ")
+    st.header("📊 グラフ")
 
     # 固定費と変動費の月別推移グラフを表示
     plot_monthly_fixed_variable_costs(monthly_cost_summary)
@@ -364,8 +356,19 @@ def main():
     plot_fixed_variable_cost_ratio(monthly_cost_summary)
 
     # 詳細データを表示
-    st.header("詳細データ")
+    st.header("📋 詳細データ")
     with st.expander("月別固定費・変動費データ", expanded=False):
-        st.dataframe(monthly_cost_summary, use_container_width=True)
+        # データを見やすく整形
+        display_df = monthly_cost_summary.copy()
+        display_df['year_month'] = display_df['year_month'].astype(str)
+        display_df = display_df.rename(columns={
+            'year_month': '年月',
+            'fixed_cost': '固定費（円）',
+            'variable_cost': '変動費（円）',
+            'total_cost': '合計支出（円）',
+            'fixed_cost_ratio': '固定費率（%）',
+            'variable_cost_ratio': '変動費率（%）'
+        })
+        st.dataframe(display_df, use_container_width=True)
 
 main()
