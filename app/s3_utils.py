@@ -27,7 +27,7 @@ def read_csv_files_from_s3(bucket_name: str, prefix: str) -> pd.DataFrame | None
     """
 
     s3 = get_s3fs()
-    csv_path = f"{bucket_name}/{prefix}**/*.csv"
+    csv_path = f"{bucket_name}/{prefix}/**/*.csv"
     csv_files = s3.glob(csv_path)
 
     # 各CSVファイルを読み込みDataFrameのリストに格納
