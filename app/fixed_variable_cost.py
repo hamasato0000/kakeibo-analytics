@@ -232,6 +232,13 @@ def plot_monthly_fixed_variable_costs(monthly_cost_summary: pd.DataFrame):
 
     stacked_data['cost_type'] = stacked_data['cost_type'].map(category_mapping)
 
+    # 積み上げ順序用の数値を追加（固定費を0、変動費を1として固定費が下になるように）
+    order_mapping = {
+        '固定費': 0,
+        '変動費': 1
+    }
+    stacked_data['order'] = stacked_data['cost_type'].map(order_mapping)
+
     # 積み上げ棒グラフ作成
     bar_chart = alt.Chart(stacked_data).mark_bar().encode(
         x=alt.X('year_month_str:N', title='年月', sort=alt.EncodingSortField(field='year_month_dt')),
@@ -244,6 +251,7 @@ def plot_monthly_fixed_variable_costs(monthly_cost_summary: pd.DataFrame):
             ),
             legend=alt.Legend(title='費用タイプ', orient="top")
         ),
+        order=alt.Order('order:O'),  # 積み上げ順序を明示的に指定
         tooltip=[
             alt.Tooltip('year_month_str:N', title='年月'),
             alt.Tooltip('cost_type:N', title='費用タイプ'),
