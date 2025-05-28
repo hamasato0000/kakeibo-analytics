@@ -1,7 +1,5 @@
 import pandas as pd
-import s3fs
 import streamlit as st
-import re
 import os
 from datetime import datetime
 import altair as alt
@@ -106,20 +104,14 @@ def get_kakeibo_data_range(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[datet
 
     return oldest_date, newest_date
 
-def display_kakeibo_data_range(preprocessed_kakeibo_df: pd.DataFrame):
-    """
-    家計簿データの期間を表示する
+def display_summaries(monthly_kakeibo_summary: pd.DataFrame, preprocessed_kakeibo_df: pd.DataFrame):
+    """収支サマリーを3列レイアウトで表示する
 
+    :param monthly_kakeibo_summary: 月別の家計簿集計データ
+    :type monthly_kakeibo_summary: pd.DataFrame
     :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
     :type preprocessed_kakeibo_df: pd.DataFrame
     """
-
-    # 家計簿データの期間を取得
-    start_date, end_date = get_kakeibo_data_range(preprocessed_kakeibo_df)
-    st.markdown(f":gray[家計簿データの期間：{start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')}]")
-
-def display_summaries(monthly_kakeibo_summary: pd.DataFrame):
-
     # 総収入の計算
     total_income_only_salary = monthly_kakeibo_summary['income_only_salary'].sum()
     total_income_with_others = monthly_kakeibo_summary['income_with_others'].sum()
@@ -132,67 +124,67 @@ def display_summaries(monthly_kakeibo_summary: pd.DataFrame):
     total_balance_with_others = total_income_with_others + total_expense
 
     # 月平均を算出
-    monthly_avg: pd.Series = monthly_kakeibo_summary[['income_only_salary', 'income_with_others', 'expense', 'balance_only_salary', 'balance_with_others']].mean()
+    monthly_avg = monthly_kakeibo_summary[['income_only_salary', 'income_with_others', 'expense', 'balance_only_salary', 'balance_with_others']].mean()
     monthly_avg = monthly_avg.round(0).astype(int)
 
-    # 表示する指標を辞書で定義（拡張しやすい）
-    metrics = [
-        {"title": "総収入", "value": total_income_with_others, "category": "income"},
-        {"title": "総支出", "value": total_expense, "category": "expense"},
-        {"title": "総収支バランス", "value": total_balance_with_others, "category": 'balance'},
-        {"title": "月平均収入", "value": monthly_avg['income_with_others'], "category": "income"},
-        {"title": "月平均収入（給与のみ）", "value": monthly_avg['income_only_salary'], "category": 'income'},
-        {"title": "月平均支出", "value": monthly_avg['expense'], "category": 'expense'},
-        {"title": "月平均収支バランス", "value": monthly_avg['balance_with_others'], "category": 'balance'},
-        {"title": "月平均収支バランス（給与のみ）", "value": monthly_avg['balance_only_salary'], "category": 'balance'},
-    ]
+    # データ期間情報を取得
+    start_date, end_date = get_kakeibo_data_range(preprocessed_kakeibo_df)
+    months_count = len(monthly_kakeibo_summary)
 
-    value_colers = {
-        "income": "blue",
-        "expense": "red",
-        "balance": "green"
-    }
+    # 指標を3列で表示
+    col1, col2, col3 = st.columns(3)
 
-    # 必要な行数を計算（2列の場合）
-    # 要素が奇数個の場合に適切な行数を割り出すために、1を加算してから2で割る
-    # 例: 7個の要素がある場合、(7 + 1) // 2 = 4行
-    num_rows = (len(metrics) + 1) // 2
+    with col1:
+        # 収入関連の指標
+        st.markdown("### 💰 収入")
 
-    # 指標を動的に表示
-    for i in range(num_rows):
-        row = st.columns(2)
-        for j in range(2):
-            idx = i * 2 + j
-            if idx < len(metrics):
-                metric = metrics[idx]
-                with row[j]:
-                    con = st.container(border=True)
-                    con.markdown(f"##### {metric['title']}")
+        income_metrics = [
+            {"title": "総収入", "value": total_income_with_others},
+            {"title": "総収入（給与のみ）", "value": total_income_only_salary},
+            {"title": "月平均収入", "value": monthly_avg['income_with_others']},
+            {"title": "月平均収入（給与のみ）", "value": monthly_avg['income_only_salary']}
+        ]
 
-                    if metric["value"] >= 0:
-                        con.markdown(f"#### :blue[¥ {metric['value']:,.0f}]")
-                    else:
-                        con.markdown(f"#### :red[¥ {metric['value']:,.0f}]")
+        for metric in income_metrics:
+            con = st.container(border=True)
+            con.markdown(f"**{metric['title']}**")
+            con.markdown(f"### :blue[¥ {metric['value']:,.0f}]")
 
-def calculate_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[float, float, float]:
-    """
-    総収入と総支出を計算する
+    with col2:
+        # 支出関連の指標
+        st.markdown("### 💸 支出")
 
-    :param df: 前処理した家計簿データ
-    :type df: pd.DataFrame
-    :return: 総収入、総支出、総収支バランスを含むタプル
-    :rtype: tuple[float, float, float]
-    """
-    # 総収入の計算
-    total_income = preprocessed_kakeibo_df[preprocessed_kakeibo_df['is_salary'] | preprocessed_kakeibo_df['is_bonus']]['amount'].sum()
+        expense_metrics = [
+            {"title": "総支出", "value": -total_expense},
+            {"title": "月平均支出", "value": -monthly_avg['expense']}
+        ]
 
-    # 総支出の計算
-    total_expense = preprocessed_kakeibo_df[~(preprocessed_kakeibo_df['is_salary'] | preprocessed_kakeibo_df['is_bonus'])]['amount'].sum()
+        for metric in expense_metrics:
+            con = st.container(border=True)
+            con.markdown(f"**{metric['title']}**")
+            con.markdown(f"### :red[¥ {metric['value']:,.0f}]")
 
-    # 総収支バランスの計算
-    total_balance = total_income + total_expense  # 支出は負の値なので加算
+    with col3:
+        # 収支バランス関連の指標
+        st.markdown("### 📊 収支バランス")
 
-    return total_income, total_expense, total_balance
+        balance_metrics = [
+            {"title": "総収支バランス", "value": total_balance_with_others},
+            {"title": "総収支バランス（給与のみ）", "value": total_balance_only_salary},
+            {"title": "月平均収支バランス", "value": monthly_avg['balance_with_others']},
+            {"title": "月平均収支バランス（給与のみ）", "value": monthly_avg['balance_only_salary']}
+        ]
+
+        for metric in balance_metrics:
+            con = st.container(border=True)
+            con.markdown(f"**{metric['title']}**")
+            if metric['value'] >= 0:
+                con.markdown(f"### :green[¥ {metric['value']:,.0f}]")
+            else:
+                con.markdown(f"### :orange[¥ {metric['value']:,.0f}]")
+
+    # データ期間情報を表示
+    st.info(f"📅 **データ期間:** {start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')} （{months_count}ヶ月）")
 
 def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bonus: bool = True):
     """月別収支のトレンドをプロットする"""
@@ -210,7 +202,7 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
             total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'])].sum())
         ).reset_index()
 
-        income_label = '収入（賞与込み）'
+        income_label = '収入'
 
         # 収支バランスを計算（収入 - 支出）
         monthly_summary['balance'] = monthly_summary['total_income'] + monthly_summary['total_expense']  # 支出は負の値なので加算
@@ -222,7 +214,7 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
             total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'])].sum())
         ).reset_index()
 
-        income_label = '収入（賞与なし）'
+        income_label = '収入（給与のみ）'
 
         # 収支バランスを計算（収入 - 支出）
         monthly_summary['balance'] = monthly_summary['total_income'] + monthly_summary['total_expense']  # 支出は負の値なので加算
@@ -253,19 +245,17 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
 
     # 棒グラフ作成（グループ化された棒グラフ）
     bar_chart = alt.Chart(income_expense_data).mark_bar().encode(
-        x=alt.X('year_month_str:N', title='年月', sort=alt.EncodingSortField(field='year_month_dt')), # X軸に年月を設定、年月でソート
-        y=alt.Y('amount:Q', title='金額（円）'), # Y軸に金額を設定
-        xOffset='category:N', # カテゴリごとに棒を横にずらす（グループ化）
-        # カテゴリ毎に色分け
+        x=alt.X('year_month_str:N', title='年月', sort=alt.EncodingSortField(field='year_month_dt')),
+        y=alt.Y('amount:Q', title='金額（円）'),
+        xOffset='category:N',
         color=alt.Color(
             'category:N',
             scale=alt.Scale(
                 domain=[income_label, '支出'],
-                range=['lightblue', 'salmon']
+                range=['#5470c6', '#ff7f7f']
             ),
             legend=alt.Legend(title='区分', orient="top")
         ),
-        # マウスホバー時に表示される情報（ツールチップ）。
         tooltip=[
             alt.Tooltip('year_month_str:N', title='年月'),
             alt.Tooltip('category:N', title='区分'),
@@ -282,16 +272,16 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
     # 収支バランスの線グラフ作成
     line_chart = alt.Chart(balance_data).mark_line(
         point={
-            'filled': True,  # ポイントを塗りつぶし
-            'fill': 'yellow',  # ポイントの塗りつぶし色
-            'stroke': 'green',  # ポイントの枠線の色
-            'strokeWidth': 2,  # ポイントの枠線の太さ
-            'size': 80  # ポイントのサイズ
-        }, # データポイントを表示
-        color='green',
+            'filled': True,
+            'fill': 'yellow',
+            'stroke': '#91cc75',
+            'strokeWidth': 2,
+            'size': 80
+        },
+        color='#91cc75',
         strokeWidth=2
     ).encode(
-        x=alt.X('year_month_str:N', title='年月', sort=alt.EncodingSortField(field='year_month_dt')), # X軸に年月を設定、年月でソート
+        x=alt.X('year_month_str:N', title='年月', sort=alt.EncodingSortField(field='year_month_dt')),
         y=alt.Y('balance:Q', title='収支バランス（円）', scale=alt.Scale(zero=False)),
         tooltip=[
             alt.Tooltip('year_month_str:N', title='年月'),
@@ -304,7 +294,7 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
         bar_chart,
         line_chart
     ).properties(
-        title=f'月別の収入・支出および収支バランスの推移：{income_label}と支出の比較'
+        title=f'月別の{income_label}・支出および収支バランスの推移'
     )
 
     st.altair_chart(chart, use_container_width=True)
@@ -312,11 +302,11 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
 def main():
     st.set_page_config(
         page_title="収支分析",
-        page_icon=":material/analytics:",
-        layout="wide",
+        page_icon="💰",
+        layout="wide"
     )
 
-    st.title(":material/analytics: 収支分析")
+    st.title("💰 収支分析")
 
     with st.spinner("家計簿データを取得中..."):
         kakeibo_data: pd.DataFrame = s3_utils.read_csv_files_from_s3(bucket_name=S3_BUCKET_NAME, prefix=S3_PREFIX)
@@ -327,20 +317,33 @@ def main():
     # 月単位のデータ集計
     monthly_kakeibo_summary: pd.DataFrame = summarize_monthly_kakeibo_data(preprocessed_kakeibo_data)
 
-    # 家計簿データの期間を表示
-    display_kakeibo_data_range(preprocessed_kakeibo_data)
-
-    st.header("サマリー")
+    st.header("📈 サマリー")
 
     # サマリーを表示
-    display_summaries(monthly_kakeibo_summary)
+    display_summaries(monthly_kakeibo_summary, preprocessed_kakeibo_data)
 
-    st.header("グラフ")
+    st.header("📊 グラフ")
 
     # 月別収支推移のグラフを表示（賞与込み）
     plot_monthly_balance_trend(preprocessed_kakeibo_data)
 
     # 月別収支推移のグラフを表示（賞与なし）
     plot_monthly_balance_trend(preprocessed_kakeibo_data, include_bonus=False)
+
+    # 詳細データを表示
+    st.header("📋 詳細データ")
+    with st.expander("月別収支データ", expanded=False):
+        # データを見やすく整形
+        display_df = monthly_kakeibo_summary.copy()
+        display_df['year_month'] = display_df['year_month'].astype(str)
+        display_df = display_df.rename(columns={
+            'year_month': '年月',
+            'income_only_salary': '収入（給与のみ）（円）',
+            'income_with_others': '収入（賞与込み）（円）',
+            'expense': '支出（円）',
+            'balance_only_salary': '収支バランス（給与のみ）（円）',
+            'balance_with_others': '収支バランス（賞与込み）（円）'
+        })
+        st.dataframe(display_df, use_container_width=True)
 
 main()
