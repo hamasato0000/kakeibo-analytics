@@ -111,23 +111,13 @@ def get_kakeibo_data_range(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[datet
 
     return oldest_date, newest_date
 
-def display_kakeibo_data_range(preprocessed_kakeibo_df: pd.DataFrame):
-    """
-    家計簿データの期間を表示する
-
-    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
-    :type preprocessed_kakeibo_df: pd.DataFrame
-    """
-
-    # 家計簿データの期間を取得
-    start_date, end_date = get_kakeibo_data_range(preprocessed_kakeibo_df)
-    st.markdown(f":gray[家計簿データの期間：{start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')}]")
-
-def display_cost_summaries(monthly_cost_summary: pd.DataFrame):
+def display_cost_summaries(monthly_cost_summary: pd.DataFrame, preprocessed_kakeibo_df: pd.DataFrame):
     """固定費と変動費の集計結果を表示する
 
     :param monthly_cost_summary: 月別の固定費・変動費集計データ
     :type monthly_cost_summary: pd.DataFrame
+    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
+    :type preprocessed_kakeibo_df: pd.DataFrame
     """
     # 総固定費の計算
     total_fixed_cost = monthly_cost_summary['fixed_cost'].sum()
@@ -145,6 +135,10 @@ def display_cost_summaries(monthly_cost_summary: pd.DataFrame):
     # 全期間の固定費率と変動費率
     fixed_cost_ratio = round(total_fixed_cost / total_cost * 100, 1) if total_cost > 0 else 0
     variable_cost_ratio = round(total_variable_cost / total_cost * 100, 1) if total_cost > 0 else 0
+
+    # データ期間情報を取得
+    start_date, end_date = get_kakeibo_data_range(preprocessed_kakeibo_df)
+    months_count = len(monthly_cost_summary)
 
     # 指標を3列で表示
     col1, col2, col3 = st.columns(3)
@@ -191,17 +185,16 @@ def display_cost_summaries(monthly_cost_summary: pd.DataFrame):
 
         total_metrics = [
             {"title": "総支出", "value": total_cost},
-            {"title": "月平均支出", "value": monthly_avg['total_cost']},
-            {"title": "データ期間", "value": f"{len(monthly_cost_summary)}ヶ月", "is_text": True}
+            {"title": "月平均支出", "value": monthly_avg['total_cost']}
         ]
 
         for metric in total_metrics:
             con = st.container(border=True)
             con.markdown(f"**{metric['title']}**")
-            if metric.get('is_text'):
-                con.markdown(f"### :orange[{metric['value']}]")
-            else:
-                con.markdown(f"### :orange[¥ {metric['value']:,.0f}]")
+            con.markdown(f"### :orange[¥ {metric['value']:,.0f}]")
+
+    # データ期間情報を表示
+    st.info(f"📅 **データ期間:** {start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')} （{months_count}ヶ月）")
 
 def plot_monthly_fixed_variable_costs(monthly_cost_summary: pd.DataFrame):
     """月別の固定費と変動費の推移をグラフ表示する
@@ -345,7 +338,7 @@ def main():
     monthly_cost_summary: pd.DataFrame = summarize_monthly_fixed_variable_costs(preprocessed_kakeibo_data)
 
     # 家計簿データの期間を表示
-    display_kakeibo_data_range(preprocessed_kakeibo_data)
+    start_date, end_date = get_kakeibo_data_range(preprocessed_kakeibo_data)
 
     # 設定ファイルから固定費カテゴリを表示
     st.info(f"**固定費の分類基準:** {', '.join(config.FIXED_COST_CATEGORIES)}")
@@ -353,7 +346,7 @@ def main():
     st.header("📈 サマリー")
 
     # サマリーを表示
-    display_cost_summaries(monthly_cost_summary)
+    display_cost_summaries(monthly_cost_summary, preprocessed_kakeibo_data)
 
     st.header("📊 グラフ")
 

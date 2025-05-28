@@ -1,13 +1,10 @@
 import pandas as pd
-import s3fs
 import streamlit as st
-import re
 import os
 from datetime import datetime
 import altair as alt
 from dotenv import load_dotenv
 import s3_utils
-import config
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
@@ -107,23 +104,13 @@ def get_kakeibo_data_range(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[datet
 
     return oldest_date, newest_date
 
-def display_kakeibo_data_range(preprocessed_kakeibo_df: pd.DataFrame):
-    """
-    家計簿データの期間を表示する
-
-    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
-    :type preprocessed_kakeibo_df: pd.DataFrame
-    """
-
-    # 家計簿データの期間を取得
-    start_date, end_date = get_kakeibo_data_range(preprocessed_kakeibo_df)
-    st.markdown(f":gray[家計簿データの期間：{start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')}]")
-
-def display_summaries(monthly_kakeibo_summary: pd.DataFrame):
+def display_summaries(monthly_kakeibo_summary: pd.DataFrame, preprocessed_kakeibo_df: pd.DataFrame):
     """収支サマリーを3列レイアウトで表示する
 
     :param monthly_kakeibo_summary: 月別の家計簿集計データ
     :type monthly_kakeibo_summary: pd.DataFrame
+    :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
+    :type preprocessed_kakeibo_df: pd.DataFrame
     """
     # 総収入の計算
     total_income_only_salary = monthly_kakeibo_summary['income_only_salary'].sum()
@@ -139,6 +126,10 @@ def display_summaries(monthly_kakeibo_summary: pd.DataFrame):
     # 月平均を算出
     monthly_avg = monthly_kakeibo_summary[['income_only_salary', 'income_with_others', 'expense', 'balance_only_salary', 'balance_with_others']].mean()
     monthly_avg = monthly_avg.round(0).astype(int)
+
+    # データ期間情報を取得
+    start_date, end_date = get_kakeibo_data_range(preprocessed_kakeibo_df)
+    months_count = len(monthly_kakeibo_summary)
 
     # 指標を3列で表示
     col1, col2, col3 = st.columns(3)
@@ -165,17 +156,13 @@ def display_summaries(monthly_kakeibo_summary: pd.DataFrame):
 
         expense_metrics = [
             {"title": "総支出", "value": -total_expense},
-            {"title": "月平均支出", "value": -monthly_avg['expense']},
-            {"title": "データ期間", "value": f"{len(monthly_kakeibo_summary)}ヶ月", "is_text": True}
+            {"title": "月平均支出", "value": -monthly_avg['expense']}
         ]
 
         for metric in expense_metrics:
             con = st.container(border=True)
             con.markdown(f"**{metric['title']}**")
-            if metric.get('is_text'):
-                con.markdown(f"### :red[{metric['value']}]")
-            else:
-                con.markdown(f"### :red[¥ {metric['value']:,.0f}]")
+            con.markdown(f"### :red[¥ {metric['value']:,.0f}]")
 
     with col3:
         # 収支バランス関連の指標
@@ -196,25 +183,8 @@ def display_summaries(monthly_kakeibo_summary: pd.DataFrame):
             else:
                 con.markdown(f"### :orange[¥ {metric['value']:,.0f}]")
 
-def calculate_total_income_expense(preprocessed_kakeibo_df: pd.DataFrame) -> tuple[float, float, float]:
-    """
-    総収入と総支出を計算する
-
-    :param df: 前処理した家計簿データ
-    :type df: pd.DataFrame
-    :return: 総収入、総支出、総収支バランスを含むタプル
-    :rtype: tuple[float, float, float]
-    """
-    # 総収入の計算
-    total_income = preprocessed_kakeibo_df[preprocessed_kakeibo_df['is_salary'] | preprocessed_kakeibo_df['is_bonus']]['amount'].sum()
-
-    # 総支出の計算
-    total_expense = preprocessed_kakeibo_df[~(preprocessed_kakeibo_df['is_salary'] | preprocessed_kakeibo_df['is_bonus'])]['amount'].sum()
-
-    # 総収支バランスの計算
-    total_balance = total_income + total_expense  # 支出は負の値なので加算
-
-    return total_income, total_expense, total_balance
+    # データ期間情報を表示
+    st.info(f"📅 **データ期間:** {start_date.strftime('%Y/%m/%d')} 〜 {end_date.strftime('%Y/%m/%d')} （{months_count}ヶ月）")
 
 def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bonus: bool = True):
     """月別収支のトレンドをプロットする"""
@@ -347,13 +317,10 @@ def main():
     # 月単位のデータ集計
     monthly_kakeibo_summary: pd.DataFrame = summarize_monthly_kakeibo_data(preprocessed_kakeibo_data)
 
-    # 家計簿データの期間を表示
-    display_kakeibo_data_range(preprocessed_kakeibo_data)
-
     st.header("📈 サマリー")
 
     # サマリーを表示
-    display_summaries(monthly_kakeibo_summary)
+    display_summaries(monthly_kakeibo_summary, preprocessed_kakeibo_data)
 
     st.header("📊 グラフ")
 
