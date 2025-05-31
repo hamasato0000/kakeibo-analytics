@@ -13,3 +13,6 @@ else:
     st.markdown("#### 固定費・変動費を見直そう")
     st.page_link("fixed_variable_cost.py", label="固定費・変動費分析", icon=":material/attach_money:")
 
+    st.markdown("#### 食費の傾向を把握しよう")
+    st.page_link("food_analysis.py", label="食費分析", icon=":material/restaurant:")
+
