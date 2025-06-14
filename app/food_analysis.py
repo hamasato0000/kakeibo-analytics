@@ -261,9 +261,17 @@ def plot_monthly_food_trend(monthly_food_summary: pd.DataFrame):
     """
     # year_monthをstring型に変換してソート
     df = monthly_food_summary.copy()
-    df['year_month_str'] = df['year_month'].astype(str)
+
+    # year_monthがPeriod型でない場合は変換
+    if not pd.api.types.is_period_dtype(df['year_month']):
+        df['year_month'] = pd.to_period(df['year_month'], freq='M')
+
+    # タイムスタンプに変換してからソート
     df['year_month_dt'] = df['year_month'].dt.to_timestamp()
     df = df.sort_values('year_month_dt')
+
+    # ソート後にstring型に変換
+    df['year_month_str'] = df['year_month'].astype(str)
 
     # 食費の小項目カラムを取得（year_month, year_month_str, year_month_dt, total_food以外）
     food_categories = [col for col in df.columns if col not in ['year_month', 'year_month_str', 'year_month_dt', 'total_food']]
@@ -283,12 +291,19 @@ def plot_monthly_food_trend(monthly_food_summary: pd.DataFrame):
     # 0円のデータを除外（グラフを見やすくするため）
     stacked_data = stacked_data[stacked_data['amount'] > 0]
 
+    # 年月の順序を明示的に定義（時系列順）
+    month_order = df['year_month_str'].tolist()
+
     # 色のパレットを定義
     color_palette = ['#ff7f7f', '#87ceeb', '#98d982', '#ffb347', '#dda0dd', '#f0e68c']
 
     # 積み上げ棒グラフ作成
     bar_chart = alt.Chart(stacked_data).mark_bar().encode(
-        x=alt.X('year_month_str:N', title='年月', sort=alt.EncodingSortField(field='year_month_dt')),
+        x=alt.X(
+            'year_month_str:N',
+            title='年月',
+            sort=month_order  # EncodingSortFieldの代わりに明示的な順序リストを使用
+        ),
         y=alt.Y('amount:Q', title='金額（円）', stack=True),
         color=alt.Color(
             'food_category:N',
