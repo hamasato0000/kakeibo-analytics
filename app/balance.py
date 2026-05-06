@@ -14,6 +14,13 @@ S3_PREFIX = os.environ["S3_PREFIX"]
 
 def preprocess_kakeibo_data(kakeibo_df: pd.DataFrame) -> pd.DataFrame:
     """家計簿データを前処理する
+
+    - カラム名を英語に変換
+    - データ型の変換
+    - カテゴリの整理
+    - 計算対象外のものの除外
+    - 振替対象のものの除外
+
     :param kakeibo_df: 家計簿データ
     :type kakeibo_df: pd.DataFrame
     :return: 前処理済みの家計簿データ
@@ -198,8 +205,8 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
     if include_bonus:
         # 月ごとの収入と支出を集計
         monthly_summary = df.groupby('year_month').agg(
-            total_income=('amount', lambda x: x[(df['is_salary'] | df['is_bonus'])].sum()),
-            total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'])].sum())
+            total_income=('amount', lambda x: x[(df['is_salary'] | df['is_bonus'] | df['is_other_income'])].sum()),
+            total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'] | df['is_other_income'])].sum())
         ).reset_index()
 
         income_label = '収入'
@@ -211,7 +218,7 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
         # 月ごとの収入と支出を集計
         monthly_summary = df.groupby('year_month').agg(
             total_income=('amount', lambda x: x[df['is_salary']].sum()),
-            total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'])].sum())
+            total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'] | df['is_other_income'])].sum())
         ).reset_index()
 
         income_label = '収入（給与のみ）'
