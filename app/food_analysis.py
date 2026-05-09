@@ -442,6 +442,60 @@ def plot_workday_food_average_trend(workday_food_average: pd.DataFrame):
 
     st.altair_chart(line_chart, use_container_width=True)
 
+def plot_food_category_pie_chart(monthly_food_summary: pd.DataFrame):
+    """食費カテゴリの全期間月平均の割合を円グラフで表示する
+
+    :param monthly_food_summary: 月別の食費集計データ
+    :type monthly_food_summary: pd.DataFrame
+    """
+    df = monthly_food_summary.copy()
+    
+    # 食費の小項目カラムを取得
+    food_categories = [col for col in df.columns if col not in ['year_month', 'year_month_str', 'year_month_dt', 'total_food']]
+    food_categories = sorted(food_categories)
+    
+    avg_data = []
+    for cat in food_categories:
+        avg = df[cat].mean()
+        if avg > 0:
+            avg_data.append({'category': cat, 'monthly_average': avg})
+            
+    if not avg_data:
+        return
+        
+    df_pie = pd.DataFrame(avg_data)
+    # パーセンテージを計算
+    total_avg = df_pie['monthly_average'].sum()
+    df_pie['percentage'] = df_pie['monthly_average'] / total_avg
+    
+    # 色のパレットを棒グラフと合わせる
+    color_palette = ['#ff7f7f', '#87ceeb', '#98d982', '#ffb347', '#dda0dd', '#f0e68c']
+    
+    # ベースとなるチャート
+    base_chart = alt.Chart(df_pie).encode(
+        theta=alt.Theta(field="monthly_average", type="quantitative", stack=True),
+        color=alt.Color(
+            field="category", 
+            type="nominal", 
+            legend=alt.Legend(title="食費カテゴリ", orient="right"),
+            scale=alt.Scale(domain=food_categories, range=color_palette)
+        ),
+        tooltip=[
+            alt.Tooltip('category:N', title='カテゴリ'),
+            alt.Tooltip('monthly_average:Q', title='月平均（円）', format=',.0f'),
+            alt.Tooltip('percentage:Q', title='割合', format='.1%')
+        ]
+    )
+    
+    # 円グラフ（ドーナツ）
+    pie_chart = base_chart.mark_arc(innerRadius=50).properties(
+        width=400,
+        height=300,
+        title='各カテゴリの割合（全期間の月平均）'
+    )
+    
+    st.altair_chart(pie_chart, use_container_width=True)
+
 def main():
     st.set_page_config(
         page_title="食費分析",
@@ -495,6 +549,9 @@ def main():
 
     # 月別食費推移グラフ（小項目別積み上げ）を表示
     plot_monthly_food_trend(monthly_food_summary)
+
+    # 各カテゴリの割合を円グラフで表示
+    plot_food_category_pie_chart(monthly_food_summary)
 
     # 食費-会の平日あたり平均推移グラフを表示
     plot_workday_food_average_trend(workday_food_average)
