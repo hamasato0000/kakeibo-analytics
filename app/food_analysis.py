@@ -46,7 +46,13 @@ def preprocess_kakeibo_data(kakeibo_df: pd.DataFrame) -> pd.DataFrame:
     df['is_transfer'] = df['is_transfer'].astype(int)
 
     # 食費フラグの作成
-    df['is_food'] = df['major_category'].str.contains('食費', na=False)
+    target_minor_categories = [
+        '食費-会',
+        '食費-家・外',
+        '食費-家・中',
+        '食費-個・外'
+    ]
+    df['is_food'] = df['minor_category'].isin(target_minor_categories)
 
     # 計算対象外のものは削除
     df = df[df['is_target'] == 1]
@@ -202,8 +208,9 @@ def display_food_summaries(monthly_food_summary: pd.DataFrame, workday_food_aver
     start_date, end_date = get_kakeibo_data_range(preprocessed_kakeibo_df)
     months_count = len(monthly_food_summary)
 
-    # 指標を3列で表示
+    # 指標を2行3列で表示
     col1, col2, col3 = st.columns(3)
+    col4, col5, col6 = st.columns(3)
 
     with col1:
         # 総食費関連の指標
@@ -220,11 +227,12 @@ def display_food_summaries(monthly_food_summary: pd.DataFrame, workday_food_aver
             con.markdown(f"### :green[¥ {metric['value']:,.0f}]")
 
     with col2:
-        # 食費-会関連の指標
-        st.markdown("### ☕ 食費-会")
+        # 食費-会
+        category_name = '食費-会'
+        st.markdown(f"### ☕ {category_name}")
 
         work_food_metrics = [
-            {"title": "総食費-会", "value": total_work_food},
+            {"title": "総額", "value": total_work_food},
             {"title": "平日あたり平均", "value": avg_daily_work_food}
         ]
 
@@ -234,6 +242,60 @@ def display_food_summaries(monthly_food_summary: pd.DataFrame, workday_food_aver
             con.markdown(f"### :blue[¥ {metric['value']:,.0f}]")
 
     with col3:
+        # 食費-家・外
+        category_name = '食費-家・外'
+        st.markdown(f"### 🍔 {category_name}")
+        
+        cat_total = monthly_food_summary[category_name].sum() if category_name in monthly_food_summary.columns else 0
+        cat_avg = monthly_food_summary[category_name].mean() if category_name in monthly_food_summary.columns else 0
+        
+        metrics = [
+            {"title": "総額", "value": cat_total},
+            {"title": "月平均", "value": cat_avg}
+        ]
+
+        for metric in metrics:
+            con = st.container(border=True)
+            con.markdown(f"**{metric['title']}**")
+            con.markdown(f"### :blue[¥ {metric['value']:,.0f}]")
+
+    with col4:
+        # 食費-家・中
+        category_name = '食費-家・中'
+        st.markdown(f"### 🏠 {category_name}")
+        
+        cat_total = monthly_food_summary[category_name].sum() if category_name in monthly_food_summary.columns else 0
+        cat_avg = monthly_food_summary[category_name].mean() if category_name in monthly_food_summary.columns else 0
+        
+        metrics = [
+            {"title": "総額", "value": cat_total},
+            {"title": "月平均", "value": cat_avg}
+        ]
+
+        for metric in metrics:
+            con = st.container(border=True)
+            con.markdown(f"**{metric['title']}**")
+            con.markdown(f"### :blue[¥ {metric['value']:,.0f}]")
+
+    with col5:
+        # 食費-個・外
+        category_name = '食費-個・外'
+        st.markdown(f"### 🚶 {category_name}")
+        
+        cat_total = monthly_food_summary[category_name].sum() if category_name in monthly_food_summary.columns else 0
+        cat_avg = monthly_food_summary[category_name].mean() if category_name in monthly_food_summary.columns else 0
+        
+        metrics = [
+            {"title": "総額", "value": cat_total},
+            {"title": "月平均", "value": cat_avg}
+        ]
+
+        for metric in metrics:
+            con = st.container(border=True)
+            con.markdown(f"**{metric['title']}**")
+            con.markdown(f"### :blue[¥ {metric['value']:,.0f}]")
+
+    with col6:
         # その他の指標
         st.markdown("### 📊 その他")
 
@@ -389,30 +451,46 @@ def main():
 
     st.title("🍽️ 食費分析")
 
+    ###############################################################
+    # 家計簿データの取得
+    ###############################################################
     with st.spinner("家計簿データを取得中..."):
         # S3からデータを取得
         kakeibo_data: pd.DataFrame = s3_utils.read_csv_files_from_s3(bucket_name=S3_BUCKET_NAME, prefix=S3_PREFIX)
 
+    ###############################################################
     # 家計簿データの前処理
+    ###############################################################
     preprocessed_kakeibo_data: pd.DataFrame = preprocess_kakeibo_data(kakeibo_data)
 
+    ###############################################################
     # 食費データがあるかチェック
+    ###############################################################
     food_data = preprocessed_kakeibo_data[preprocessed_kakeibo_data['is_food']]
     if food_data.empty:
         st.warning("食費のデータが見つかりません。")
         return
-
+    
+    ###############################################################
     # 月単位の食費データ集計
+    ###############################################################
     monthly_food_summary: pd.DataFrame = summarize_monthly_food_data(preprocessed_kakeibo_data)
 
+    ###############################################################
     # 食費-会の平日あたり平均を算出
+    ###############################################################
     workday_food_average: pd.DataFrame = calculate_workday_food_average(preprocessed_kakeibo_data)
 
+    ###############################################################
+    # サマリー表示
+    ###############################################################
     st.header("📈 サマリー")
 
-    # サマリーを表示
     display_food_summaries(monthly_food_summary, workday_food_average, preprocessed_kakeibo_data)
 
+    ###############################################################
+    # グラフ表示
+    ###############################################################
     st.header("📊 グラフ")
 
     # 月別食費推移グラフ（小項目別積み上げ）を表示
@@ -421,7 +499,9 @@ def main():
     # 食費-会の平日あたり平均推移グラフを表示
     plot_workday_food_average_trend(workday_food_average)
 
+    ###############################################################
     # 詳細データを表示
+    ###############################################################
     st.header("📋 詳細データ")
 
     with st.expander("月別食費データ", expanded=False):
