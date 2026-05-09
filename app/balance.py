@@ -5,6 +5,9 @@ from datetime import datetime
 import altair as alt
 from dotenv import load_dotenv
 import s3_utils
+import duckdb
+
+print("balance.pyが読み込まれました")
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
@@ -65,7 +68,7 @@ def preprocess_kakeibo_data(kakeibo_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def summarize_monthly_kakeibo_data(preprocessed_kakeibo_df: pd.DataFrame) -> pd.DataFrame:
-    """月単位の家計簿データを集計する
+    """月単位の家計簿データをDuckDBで集計する
 
     :param preprocessed_kakeibo_df: 前処理済みの家計簿データ
     :type preprocessed_kakeibo_df: pd.DataFrame
@@ -73,21 +76,22 @@ def summarize_monthly_kakeibo_data(preprocessed_kakeibo_df: pd.DataFrame) -> pd.
     :rtype: pd.DataFrame
     """
 
-    df = preprocessed_kakeibo_df.copy()
-
-    # 月別で集計するため、年月のカラムを追加
-    df['year_month'] = df['date'].dt.to_period('M')
-
-    income_only_salary_df = df[df['is_salary']]
-    income_with_others_df = df[df['is_salary'] | df['is_bonus'] | df['is_other_income']]
-    expense_df = df[~(df['is_salary'] | df['is_bonus'] | df['is_other_income'])]
-
-    # 月別集計
-    monthly_summary = pd.DataFrame({
-        'income_only_salary': income_only_salary_df.groupby('year_month')['amount'].sum(),
-        'income_with_others': income_with_others_df.groupby('year_month')['amount'].sum(),
-        'expense': expense_df.groupby('year_month')['amount'].sum(),
-    }).reset_index()
+    query = """
+    SELECT 
+        date_trunc('month', date) AS year_month_dt,
+        COALESCE(SUM(CASE WHEN is_salary THEN amount ELSE 0 END), 0) AS income_only_salary,
+        COALESCE(SUM(CASE WHEN is_salary OR is_bonus OR is_other_income THEN amount ELSE 0 END), 0) AS income_with_others,
+        COALESCE(SUM(CASE WHEN NOT (is_salary OR is_bonus OR is_other_income) THEN amount ELSE 0 END), 0) AS expense
+    FROM preprocessed_kakeibo_df
+    GROUP BY date_trunc('month', date)
+    ORDER BY year_month_dt
+    """
+    
+    # DuckDBでクエリを実行し、Pandas DataFrameとして取得
+    monthly_summary = duckdb.query(query).df()
+    
+    # 既存のロジック・グラフとの互換性のため year_month カラムを追加
+    monthly_summary['year_month'] = monthly_summary['year_month_dt'].dt.to_period('M')
 
     monthly_summary['balance_only_salary'] = monthly_summary['income_only_salary'] + monthly_summary['expense']
     monthly_summary['balance_with_others'] = monthly_summary['income_with_others'] + monthly_summary['expense']
@@ -307,6 +311,7 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
     st.altair_chart(chart, use_container_width=True)
 
 def main():
+
     st.set_page_config(
         page_title="収支分析",
         page_icon="💰",
@@ -315,27 +320,67 @@ def main():
 
     st.title("💰 収支分析")
 
+    ###############################################################
+    # S3から家計簿データを取得
+    ###############################################################
     with st.spinner("家計簿データを取得中..."):
         kakeibo_data: pd.DataFrame = s3_utils.read_csv_files_from_s3(bucket_name=S3_BUCKET_NAME, prefix=S3_PREFIX)
 
+    if kakeibo_data is None or kakeibo_data.empty:
+        st.warning("家計簿データが見つかりませんでした。")
+        return
+
+    ###############################################################
     # 家計簿データの前処理
+    ###############################################################
     preprocessed_kakeibo_data: pd.DataFrame = preprocess_kakeibo_data(kakeibo_data)
 
+    ###############################################################
+    # DuckDBとUIによるフィルタリング
+    ###############################################################
+    preprocessed_kakeibo_data['year_month_str'] = preprocessed_kakeibo_data['date'].dt.strftime('%Y-%m')
+    available_months = sorted(preprocessed_kakeibo_data['year_month_str'].unique())
+
+    if available_months:
+        st.header("🗓️ 期間指定")
+        start_month, end_month = st.select_slider(
+            "表示する期間を選択してください",
+            options=available_months,
+            value=(available_months[0], available_months[-1])
+        )
+        
+        # DuckDBによるフィルタリング
+        query = f"""
+            SELECT * 
+            FROM preprocessed_kakeibo_data
+            WHERE strftime(date, '%Y-%m') >= '{start_month}'
+              AND strftime(date, '%Y-%m') <= '{end_month}'
+        """
+        filtered_kakeibo_data = duckdb.query(query).df()
+    else:
+        filtered_kakeibo_data = preprocessed_kakeibo_data
+
+    ###############################################################
     # 月単位のデータ集計
-    monthly_kakeibo_summary: pd.DataFrame = summarize_monthly_kakeibo_data(preprocessed_kakeibo_data)
+    ###############################################################
+    monthly_kakeibo_summary: pd.DataFrame = summarize_monthly_kakeibo_data(filtered_kakeibo_data)
 
-    st.header("📈 サマリー")
-
+    ###############################################################
     # サマリーを表示
-    display_summaries(monthly_kakeibo_summary, preprocessed_kakeibo_data)
+    ###############################################################
+    st.header("📈 サマリー")
+    display_summaries(monthly_kakeibo_summary, filtered_kakeibo_data)
 
+    ###############################################################
+    # グラフを表示
+    ###############################################################
     st.header("📊 グラフ")
 
     # 月別収支推移のグラフを表示（賞与込み）
-    plot_monthly_balance_trend(preprocessed_kakeibo_data)
+    plot_monthly_balance_trend(filtered_kakeibo_data)
 
     # 月別収支推移のグラフを表示（賞与なし）
-    plot_monthly_balance_trend(preprocessed_kakeibo_data, include_bonus=False)
+    plot_monthly_balance_trend(filtered_kakeibo_data, include_bonus=False)
 
     # 詳細データを表示
     st.header("📋 詳細データ")
