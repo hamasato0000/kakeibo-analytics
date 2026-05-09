@@ -127,6 +127,8 @@ def main():
 
                     if success:
                         st.success(f"ファイルを S3 にアップロードしました: {result}")
+                        # アップロード成功時にCSV読み込みのキャッシュをクリアする
+                        s3_utils.read_csv_files_from_s3.clear()
                     else:
                         st.error(f"アップロード中にエラーが発生しました: {result}")
 
