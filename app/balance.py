@@ -310,6 +310,65 @@ def plot_monthly_balance_trend(preprocessed_kakeibo_df: pd.DataFrame, include_bo
 
     st.altair_chart(chart, use_container_width=True)
 
+def plot_cumulative_balance_trend(preprocessed_kakeibo_df: pd.DataFrame):
+    """月別収支の累積トレンドをプロットする"""
+
+    df = preprocessed_kakeibo_df.copy()
+    df['year_month'] = df['date'].dt.to_period('M')
+
+    # 賞与込みの集計
+    monthly_summary_all = df.groupby('year_month').agg(
+        total_income=('amount', lambda x: x[(df['is_salary'] | df['is_bonus'] | df['is_other_income'])].sum()),
+        total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'] | df['is_other_income'])].sum())
+    ).reset_index()
+    monthly_summary_all['balance'] = monthly_summary_all['total_income'] + monthly_summary_all['total_expense']
+    monthly_summary_all['category'] = '賞与込み'
+
+    # 給与のみの集計
+    monthly_summary_salary = df.groupby('year_month').agg(
+        total_income=('amount', lambda x: x[df['is_salary']].sum()),
+        total_expense=('amount', lambda x: x[~(df['is_salary'] | df['is_bonus'] | df['is_other_income'])].sum())
+    ).reset_index()
+    monthly_summary_salary['balance'] = monthly_summary_salary['total_income'] + monthly_summary_salary['total_expense']
+    monthly_summary_salary['category'] = '給与のみ'
+
+    # 結合
+    monthly_summary = pd.concat([monthly_summary_all, monthly_summary_salary], ignore_index=True)
+
+    # 累積を計算するため、一度各カテゴリごとにソートして計算
+    monthly_summary['year_month_dt'] = monthly_summary['year_month'].dt.to_timestamp()
+    monthly_summary['year_month_str'] = monthly_summary['year_month'].astype(str)
+    
+    monthly_summary = monthly_summary.sort_values(['category', 'year_month_dt'])
+    monthly_summary['cumulative_balance'] = monthly_summary.groupby('category')['balance'].cumsum()
+
+    # 線グラフ作成
+    line_chart = alt.Chart(monthly_summary).mark_line(
+        point=True,
+        strokeWidth=3
+    ).encode(
+        x=alt.X('year_month_str:N', title='年月', sort=alt.EncodingSortField(field='year_month_dt')),
+        y=alt.Y('cumulative_balance:Q', title='累積収支（円）'),
+        color=alt.Color(
+            'category:N', 
+            legend=alt.Legend(title='区分', orient="top"),
+            scale=alt.Scale(
+                domain=['賞与込み', '給与のみ'],
+                range=['#91cc75', '#fac858']
+            )
+        ),
+        tooltip=[
+            alt.Tooltip('year_month_str:N', title='年月'),
+            alt.Tooltip('category:N', title='区分'),
+            alt.Tooltip('cumulative_balance:Q', title='累積収支（円）', format=',')
+        ]
+    ).properties(
+        title='累積収支バランスの推移',
+        height=400
+    )
+
+    st.altair_chart(line_chart, use_container_width=True)
+
 def main():
 
     st.set_page_config(
@@ -381,6 +440,9 @@ def main():
 
     # 月別収支推移のグラフを表示（賞与なし）
     plot_monthly_balance_trend(filtered_kakeibo_data, include_bonus=False)
+
+    # 累積収支推移のグラフを表示（2本線）
+    plot_cumulative_balance_trend(filtered_kakeibo_data)
 
     # 詳細データを表示
     st.header("📋 詳細データ")
