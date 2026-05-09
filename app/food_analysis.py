@@ -518,29 +518,51 @@ def main():
     preprocessed_kakeibo_data: pd.DataFrame = preprocess_kakeibo_data(kakeibo_data)
 
     ###############################################################
+    # UIによる期間指定とフィルタリング
+    ###############################################################
+    preprocessed_kakeibo_data['year_month_str'] = preprocessed_kakeibo_data['date'].dt.strftime('%Y-%m')
+    available_months = sorted(preprocessed_kakeibo_data['year_month_str'].unique())
+
+    if available_months:
+        st.header("🗓️ 期間指定")
+        start_month, end_month = st.select_slider(
+            "表示する期間を選択してください",
+            options=available_months,
+            value=(available_months[0], available_months[-1])
+        )
+        
+        # Pandasによるフィルタリング
+        filtered_kakeibo_data = preprocessed_kakeibo_data[
+            (preprocessed_kakeibo_data['year_month_str'] >= start_month) & 
+            (preprocessed_kakeibo_data['year_month_str'] <= end_month)
+        ].copy()
+    else:
+        filtered_kakeibo_data = preprocessed_kakeibo_data.copy()
+
+    ###############################################################
     # 食費データがあるかチェック
     ###############################################################
-    food_data = preprocessed_kakeibo_data[preprocessed_kakeibo_data['is_food']]
+    food_data = filtered_kakeibo_data[filtered_kakeibo_data['is_food']]
     if food_data.empty:
-        st.warning("食費のデータが見つかりません。")
+        st.warning("指定された期間の食費データが見つかりません。")
         return
     
     ###############################################################
     # 月単位の食費データ集計
     ###############################################################
-    monthly_food_summary: pd.DataFrame = summarize_monthly_food_data(preprocessed_kakeibo_data)
+    monthly_food_summary: pd.DataFrame = summarize_monthly_food_data(filtered_kakeibo_data)
 
     ###############################################################
     # 食費-会の平日あたり平均を算出
     ###############################################################
-    workday_food_average: pd.DataFrame = calculate_workday_food_average(preprocessed_kakeibo_data)
+    workday_food_average: pd.DataFrame = calculate_workday_food_average(filtered_kakeibo_data)
 
     ###############################################################
     # サマリー表示
     ###############################################################
     st.header("📈 サマリー")
 
-    display_food_summaries(monthly_food_summary, workday_food_average, preprocessed_kakeibo_data)
+    display_food_summaries(monthly_food_summary, workday_food_average, filtered_kakeibo_data)
 
     ###############################################################
     # グラフ表示
